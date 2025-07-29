@@ -4,8 +4,15 @@ import argparse
 import sys
 import json
 import litellm
+from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
+from rich.panel import Panel
+
 from . import tools
 from . import config
+
+console = Console()
 
 SYSTEM_PROMPT = (
     "You are an AI assistant that is an expert in writing and explaining code. "
@@ -27,38 +34,60 @@ def process_llm_turn(messages, read_files_in_session, cfg):
 
         choice = response.choices[0]
         if choice.finish_reason == "tool_calls":
-            print("Assistant: Thinking...", flush=True)
-            tool_calls = choice.message.tool_calls
             messages.append(choice.message)
+            tool_calls = choice.message.tool_calls
             
-            for tool_call in tool_calls:
-                tool_name = tool_call.function.name
-                tool_args = json.loads(tool_call.function.arguments)
-                print(f"Tool Call: {tool_name}({json.dumps(tool_args)})", flush=True)
+            with console.status("[bold yellow]Assistant is thinking..."):
+                for tool_call in tool_calls:
+                    tool_name = tool_call.function.name
+                    tool_args = json.loads(tool_call.function.arguments)
+                    console.print(
+                        Panel(
+                            f"[cyan]{tool_name}[/][default]({json.dumps(tool_args)})[/]",
+                            title="[bold yellow]Tool Call[/]",
+                            border_style="yellow",
+                            expand=False,
+                        )
+                    )
 
-                if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
-                    if "read" in tool_name:
-                        tool_args["read_files_in_session"] = read_files_in_session
-                    tool_output = tool_func(**tool_args)
-                    messages.append({
-                        "role": "tool", "tool_call_id": tool_call.id,
-                        "name": tool_name, "content": str(tool_output),
-                    })
-                else:
-                    print(f"Warning: Unknown tool '{tool_name}' called.", file=sys.stderr)
+                    if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
+                        if "read" in tool_name:
+                            tool_args["read_files_in_session"] = read_files_in_session
+                        tool_output = tool_func(**tool_args)
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": tool_name,
+                                "content": str(tool_output),
+                            }
+                        )
+                    else:
+                        console.print(f"[bold red]Warning:[/] Unknown tool '{tool_name}' called.")
             continue
         
-        print("Assistant:")
         full_response = ""
-        stream_response = litellm.completion(
-            model=cfg["model"], api_key=cfg["api_key"], messages=messages, stream=True
+        panel = Panel(
+            "",
+            title="[bold green]Assistant[/]",
+            border_style="green",
         )
-        for chunk in stream_response:
-            content = chunk.choices[0].delta.content
-            if content:
-                print(content, end="", flush=True)
-                full_response += content
-        print()
+        with Live(panel, refresh_per_second=10, console=console) as live:
+            stream_response = litellm.completion(
+                model=cfg["model"], api_key=cfg["api_key"], messages=messages, stream=True
+            )
+            for chunk in stream_response:
+                content = chunk.choices[0].delta.content
+                if content:
+                    full_response += content
+                    live.update(
+                        Panel(
+                            Markdown(full_response, style="default", code_theme="monokai"),
+                            title="[bold green]Assistant[/]",
+                            border_style="green",
+                        )
+                    )
+
         messages.append({"role": "assistant", "content": full_response})
         break
 
@@ -70,16 +99,16 @@ def start_interactive_session(initial_prompt, cfg):
 
     while True:
         if prompt:
-            print(f"\nUser: {prompt}")
+            console.print(Panel(prompt, title="[bold blue]User[/]", border_style="blue"))
             messages.append({"role": "user", "content": prompt})
             try:
                 process_llm_turn(messages, read_files_in_session, cfg)
             except Exception as e:
-                print(f"\nAn error occurred: {e}", file=sys.stderr)
+                console.print(f"[bold red]An error occurred:[/] {e}")
                 messages.pop()
 
         try:
-            user_input = input("\nUser: ").strip()
+            user_input = console.input("\n[bold blue]User[/]> ").strip()
             if user_input.lower() in ["exit", "quit"]:
                 break
             elif user_input.lower() == "/config":
@@ -88,17 +117,17 @@ def start_interactive_session(initial_prompt, cfg):
                 continue
             prompt = user_input
         except (KeyboardInterrupt, EOFError):
-            print("\nExiting interactive mode.")
+            console.print("\n[bold yellow]Exiting interactive mode.[/]")
             break
 
 def main():
     """Main function for the agentic CLI tool."""
     cfg = config.load_config()
     if not cfg.get("api_key"):
-        print("Welcome to Agentic! Please configure your API key and model.")
+        console.print("[bold yellow]Welcome to Agentic! Please configure your API key and model.[/]")
         cfg = config.prompt_for_config()
         if not cfg.get("api_key"):
-            print("API key is required to run. Exiting.", file=sys.stderr)
+            console.print("[bold red]API key is required to run. Exiting.[/]")
             sys.exit(1)
 
     parser = argparse.ArgumentParser(
@@ -118,7 +147,14 @@ def main():
         config.prompt_for_config()
         sys.exit(0)
 
-    print("Starting Agentic interactive session. Type '/config' to change settings, or 'exit' to end.")
+    console.print(
+        Panel(
+            "Type '/config' to change settings, or 'exit' to end.",
+            title="[bold green]Agentic[/]",
+            subtitle="[cyan]Interactive Mode[/]",
+            expand=False,
+        )
+    )
     start_interactive_session(args.prompt, cfg)
 
 if __name__ == "__main__":

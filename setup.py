@@ -16,5 +16,6 @@ setup(
         "litellm",
         "python-dotenv",
         "cryptography",
+        "rich",
     ],
 )
