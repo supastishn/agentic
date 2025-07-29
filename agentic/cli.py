@@ -97,9 +97,13 @@ def start_interactive_session(initial_prompt, cfg):
     read_files_in_session = set()
     prompt = initial_prompt
 
+    # If an initial prompt was provided, display it once.
+    if prompt:
+        console.print(Panel(prompt, title="[bold blue]User[/]", border_style="blue"))
+
     while True:
+        # Process the prompt if it exists
         if prompt:
-            console.print(Panel(prompt, title="[bold blue]User[/]", border_style="blue"))
             messages.append({"role": "user", "content": prompt})
             try:
                 process_llm_turn(messages, read_files_in_session, cfg)
@@ -108,12 +112,15 @@ def start_interactive_session(initial_prompt, cfg):
                 messages.pop()
 
         try:
-            user_input = console.input("\n[bold blue]User[/]> ").strip()
+            # Create a full-width separator for user input
+            console.rule("[bold blue]Your Turn[/]", style="blue")
+            user_input = console.input("> ").strip()
+
             if user_input.lower() in ["exit", "quit"]:
                 break
             elif user_input.lower() == "/config":
                 cfg = config.prompt_for_config()
-                prompt = None
+                prompt = None  # Clear prompt to loop back for new input
                 continue
             prompt = user_input
         except (KeyboardInterrupt, EOFError):
