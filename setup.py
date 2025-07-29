@@ -12,4 +12,8 @@ setup(
     },
     author="",
     license="ISC",
+    install_requires=[
+        "litellm",
+        "python-dotenv",
+    ],
 )
