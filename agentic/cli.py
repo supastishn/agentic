@@ -8,6 +8,9 @@ from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
+from prompt_toolkit import PromptSession
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.formatted_text import HTML
 
 from . import tools
 from . import config
@@ -95,41 +98,55 @@ def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     read_files_in_session = set()
-    prompt = initial_prompt
+    session = PromptSession()
 
-    # If an initial prompt was provided, display it once.
-    if prompt:
-        console.print(Panel(prompt, title="[bold blue]User[/]", border_style="blue"))
+    # Define keybindings for multiline input
+    bindings = KeyBindings()
+    @bindings.add("escape", "enter")
+    def _(event):
+        event.current_buffer.insert_text("\n")
+
+    # Handle initial prompt if provided
+    if initial_prompt:
+        console.print(Panel(initial_prompt, title="[bold blue]User[/]", border_style="blue"))
+        messages.append({"role": "user", "content": initial_prompt})
+        try:
+            process_llm_turn(messages, read_files_in_session, cfg)
+        except Exception as e:
+            console.print(f"[bold red]An error occurred:[/] {e}")
+            messages.pop()
 
     while True:
-        # Process the prompt if it exists
-        if prompt:
-            messages.append({"role": "user", "content": prompt})
+        try:
+            console.rule("[bold blue]Your Turn[/]", style="blue")
+            user_input = session.prompt(
+                HTML('<b>> </b>'),
+                key_bindings=bindings,
+                bottom_toolbar=HTML(
+                    '<b>[Enter]</b> to send, <b>[Alt+Enter]</b> for new line, <b>!cmd</b> to run shell.'
+                ),
+            ).strip()
+
+            if not user_input:
+                continue
+
+            if user_input.startswith('!'):
+                command = user_input[1:].strip()
+                if command:
+                    output = tools.run_command(command)
+                    console.print(Panel(output, title=f"[bold yellow]! {command}[/]", border_style="yellow"))
+                continue
+            elif user_input.lower() == "/config":
+                cfg = config.prompt_for_config()
+                continue
+
+            messages.append({"role": "user", "content": user_input})
             try:
                 process_llm_turn(messages, read_files_in_session, cfg)
             except Exception as e:
                 console.print(f"[bold red]An error occurred:[/] {e}")
                 messages.pop()
 
-        try:
-            # Create a full-width box for user input
-            console.print(
-                Panel(
-                    "",
-                    title="[bold blue]Your Turn[/]",
-                    title_align="left",
-                    border_style="blue",
-                )
-            )
-            user_input = console.input("> ").strip()
-
-            if user_input.lower() in ["exit", "quit"]:
-                break
-            elif user_input.lower() == "/config":
-                cfg = config.prompt_for_config()
-                prompt = None  # Clear prompt to loop back for new input
-                continue
-            prompt = user_input
         except (KeyboardInterrupt, EOFError):
             console.print("\n[bold yellow]Exiting interactive mode.[/]")
             break

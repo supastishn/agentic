@@ -17,5 +17,6 @@ setup(
         "python-dotenv",
         "cryptography",
         "rich",
+        "prompt-toolkit",
     ],
 )
