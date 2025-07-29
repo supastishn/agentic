@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import sys
 from cryptography.fernet import Fernet
+from rich.console import Console
+from rich.panel import Panel
 
 # --- Constants ---
 CONFIG_DIR = Path.home() / ".agentic-pypi"
@@ -57,25 +59,56 @@ def save_config(config: dict):
     CONFIG_FILE.write_bytes(encrypted_data)
 
 def prompt_for_config() -> dict:
-    """Interactively prompts the user for configuration settings and saves them."""
-    current_config = load_config()
-    print("\n--- Configure Agent ---")
-    print("Press Enter to keep the current value.")
+    """Interactively prompts the user for configuration settings using a menu."""
+    console = Console()
+    original_config = load_config()
+    # Use a copy to allow for discarding changes
+    config_to_edit = original_config.copy()
 
-    # Model
-    current_model = current_config.get("model", "gpt-4o")
-    model = input(f"Model [{current_model}]: ").strip() or current_model
+    while True:
+        console.clear()
 
-    # API Key
-    api_key_val = current_config.get("api_key")
-    api_key_display = f"****{api_key_val[-4:]}" if api_key_val else "Not set"
-    api_key = input(f"API Key [{api_key_display}]: ").strip() or api_key_val
+        # Get current values for display
+        model = config_to_edit.get("model", "gpt-4o")
+        api_key = config_to_edit.get("api_key")
+        api_key_display = f"****{api_key[-4:]}" if api_key else "Not set"
 
-    if not api_key:
-        print("API Key is required. Configuration not saved.", file=sys.stderr)
-        return current_config
+        config_view_content = (
+            f"[bold cyan]Model:[/bold cyan] {model}\n"
+            f"[bold cyan]API Key:[/bold cyan] {api_key_display}"
+        )
+        console.print(Panel(config_view_content, title="[bold green]Current Configuration[/]", expand=False))
 
-    updated_config = {"model": model, "api_key": api_key}
-    save_config(updated_config)
-    print("Configuration saved successfully.")
-    return updated_config
+        menu_content = (
+            "1. Edit Model\n"
+            "2. Edit API Key\n"
+            "\n"
+            "3. [bold green]Save and Exit[/bold green]\n"
+            "4. [yellow]Exit without Saving[/yellow]"
+        )
+        console.print(Panel(menu_content, title="[bold yellow]Configuration Menu[/]", expand=False))
+
+        choice = console.input("[bold]Enter your choice (1-4):[/bold] ").strip()
+
+        if choice == '1':
+            new_model = console.input(f"Enter new model ([default]{model}[/default]): ").strip()
+            if new_model:
+                config_to_edit["model"] = new_model
+        elif choice == '2':
+            new_api_key = console.input(f"Enter new API Key ([default]{api_key_display}[/default]): ").strip()
+            if new_api_key:
+                config_to_edit["api_key"] = new_api_key
+        elif choice == '3':  # Save and Exit
+            if not config_to_edit.get("api_key"):
+                console.print("[bold red]API Key is required. Configuration not saved.[/bold red]")
+                console.input("Press Enter to continue...")
+                continue
+            save_config(config_to_edit)
+            console.print("\n[bold green]✔ Configuration saved successfully.[/bold green]")
+            return config_to_edit
+        elif choice == '4':  # Exit without Saving
+            console.print("\n[yellow]Configuration changes discarded.[/yellow]")
+            return original_config
+        else:
+            console.print(f"[bold red]Invalid choice: '{choice}'. Please try again.[/bold red]")
+            console.input("Press Enter to continue...")
