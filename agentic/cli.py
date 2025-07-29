@@ -112,8 +112,15 @@ def start_interactive_session(initial_prompt, cfg):
                 messages.pop()
 
         try:
-            # Create a full-width separator for user input
-            console.rule("[bold blue]Your Turn[/]", style="blue")
+            # Create a full-width box for user input
+            console.print(
+                Panel(
+                    "",
+                    title="[bold blue]Your Turn[/]",
+                    title_align="left",
+                    border_style="blue",
+                )
+            )
             user_input = console.input("> ").strip()
 
             if user_input.lower() in ["exit", "quit"]:
