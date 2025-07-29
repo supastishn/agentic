@@ -5,6 +5,7 @@ import sys
 from cryptography.fernet import Fernet
 from rich.console import Console
 from rich.panel import Panel
+from simple_term_menu import TerminalMenu
 
 # --- Constants ---
 CONFIG_DIR = Path.home() / ".agentic-pypi"
@@ -79,26 +80,39 @@ def prompt_for_config() -> dict:
         )
         console.print(Panel(config_view_content, title="[bold green]Current Configuration[/]", expand=False))
 
-        menu_content = (
-            "1. Edit Model\n"
-            "2. Edit API Key\n"
-            "\n"
-            "3. [bold green]Save and Exit[/bold green]\n"
-            "4. [yellow]Exit without Saving[/yellow]"
+        menu_items = [
+            "1. Edit Model",
+            "2. Edit API Key",
+            "",
+            "3. Save and Exit",
+            "4. Exit without Saving",
+        ]
+
+        terminal_menu = TerminalMenu(
+            menu_items,
+            title="Use UP/DOWN keys to navigate, ENTER to select. (ESC to discard)",
+            menu_cursor="> ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_green", "fg_black"),
+            cycle_cursor=True,
+            clear_screen=False,  # We handle clearing
         )
-        console.print(Panel(menu_content, title="[bold yellow]Configuration Menu[/]", expand=False))
+        
+        selected_index = terminal_menu.show()
 
-        choice = console.input("[bold]Enter your choice (1-4):[/bold] ").strip()
+        if selected_index is None or selected_index == 4: # Exit without Saving or ESC
+            console.print("\n[yellow]Configuration changes discarded.[/yellow]")
+            return original_config
 
-        if choice == '1':
+        if selected_index == 0:  # Edit Model
             new_model = console.input(f"Enter new model ([default]{model}[/default]): ").strip()
             if new_model:
                 config_to_edit["model"] = new_model
-        elif choice == '2':
+        elif selected_index == 1:  # Edit API Key
             new_api_key = console.input(f"Enter new API Key ([default]{api_key_display}[/default]): ").strip()
             if new_api_key:
                 config_to_edit["api_key"] = new_api_key
-        elif choice == '3':  # Save and Exit
+        elif selected_index == 3:  # Save and Exit
             if not config_to_edit.get("api_key"):
                 console.print("[bold red]API Key is required. Configuration not saved.[/bold red]")
                 console.input("Press Enter to continue...")
@@ -106,9 +120,4 @@ def prompt_for_config() -> dict:
             save_config(config_to_edit)
             console.print("\n[bold green]✔ Configuration saved successfully.[/bold green]")
             return config_to_edit
-        elif choice == '4':  # Exit without Saving
-            console.print("\n[yellow]Configuration changes discarded.[/yellow]")
-            return original_config
-        else:
-            console.print(f"[bold red]Invalid choice: '{choice}'. Please try again.[/bold red]")
-            console.input("Press Enter to continue...")
+        # If index is 2 (the separator), the loop continues, redrawing the menu.

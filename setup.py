@@ -13,10 +13,11 @@ setup(
     author="",
     license="ISC",
     install_requires=[
-        "litellm",
-        "python-dotenv",
         "cryptography",
-        "rich",
+        "litellm",
         "prompt-toolkit",
+        "python-dotenv",
+        "rich",
+        "simple-term-menu",
     ],
 )
