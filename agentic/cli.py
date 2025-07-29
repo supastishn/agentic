@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
-import os
 import sys
 import json
-from dotenv import load_dotenv
 import litellm
 from . import tools
+from . import config
 
 SYSTEM_PROMPT = (
     "You are an AI assistant that is an expert in writing and explaining code. "
@@ -15,11 +14,12 @@ SYSTEM_PROMPT = (
     "use relative paths from the current working directory."
 )
 
-def process_llm_turn(messages, read_files_in_session):
+def process_llm_turn(messages, read_files_in_session, cfg):
     """Handles a single turn of the LLM, including tool calls."""
     while True:
         response = litellm.completion(
-            model="gpt-4o",
+            model=cfg["model"],
+            api_key=cfg["api_key"],
             messages=messages,
             tools=tools.TOOLS_METADATA,
             tool_choice="auto",
@@ -34,44 +34,38 @@ def process_llm_turn(messages, read_files_in_session):
             for tool_call in tool_calls:
                 tool_name = tool_call.function.name
                 tool_args = json.loads(tool_call.function.arguments)
-                
                 print(f"Tool Call: {tool_name}({json.dumps(tool_args)})", flush=True)
 
                 if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
-                    # Pass the set of read files to the read tools
                     if "read" in tool_name:
                         tool_args["read_files_in_session"] = read_files_in_session
-                    
                     tool_output = tool_func(**tool_args)
-                    
                     messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_name,
-                        "content": str(tool_output),
+                        "role": "tool", "tool_call_id": tool_call.id,
+                        "name": tool_name, "content": str(tool_output),
                     })
                 else:
                     print(f"Warning: Unknown tool '{tool_name}' called.", file=sys.stderr)
-            # Continue loop to send tool results back to LLM
             continue
         
-        # If no tool calls, stream the final response
         print("Assistant:")
         full_response = ""
-        stream_response = litellm.completion(model="gpt-4o", messages=messages, stream=True)
+        stream_response = litellm.completion(
+            model=cfg["model"], api_key=cfg["api_key"], messages=messages, stream=True
+        )
         for chunk in stream_response:
             content = chunk.choices[0].delta.content
             if content:
                 print(content, end="", flush=True)
                 full_response += content
-        print() # Final newline
+        print()
         messages.append({"role": "assistant", "content": full_response})
-        break # Exit loop after streaming response
+        break
 
-def start_interactive_session(initial_prompt):
+def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    read_files_in_session = set() # Tracks files read in this session
+    read_files_in_session = set()
     prompt = initial_prompt
 
     while True:
@@ -80,45 +74,57 @@ def start_interactive_session(initial_prompt):
             messages.append({"role": "user", "content": prompt})
         
         try:
-            process_llm_turn(messages, read_files_in_session)
+            process_llm_turn(messages, read_files_in_session, cfg)
         except Exception as e:
             print(f"\nAn error occurred: {e}", file=sys.stderr)
-            messages.pop() # Remove the last user message on error
+            messages.pop()
 
-        # Get next prompt from user
         try:
-            prompt = input("\nUser: ")
-            if prompt.lower() in ["exit", "quit"]:
+            user_input = input("\nUser: ").strip()
+            if user_input.lower() in ["exit", "quit"]:
                 break
+            elif user_input.lower() == "/config":
+                cfg = config.prompt_for_config()
+                prompt = None
+                continue
+            prompt = user_input
         except (KeyboardInterrupt, EOFError):
             print("\nExiting interactive mode.")
             break
 
 def main():
     """Main function for the agentic CLI tool."""
-    load_dotenv()
-    if not os.getenv("OPENAI_API_KEY"):
-        print("Error: OPENAI_API_KEY environment variable not set.", file=sys.stderr)
-        sys.exit(1)
+    cfg = config.load_config()
+    if not cfg.get("api_key"):
+        print("Welcome to Agentic! Please configure your API key and model.")
+        cfg = config.prompt_for_config()
+        if not cfg.get("api_key"):
+            print("API key is required to run. Exiting.", file=sys.stderr)
+            sys.exit(1)
 
     parser = argparse.ArgumentParser(
         description="A command-line coding agent that uses LiteLLM."
     )
     parser.add_argument(
-        "prompt",
-        type=str,
-        nargs="?",
+        "prompt", type=str, nargs="?",
         default=sys.stdin.read() if not sys.stdin.isatty() else None,
-        help="The coding prompt. Can be passed as an argument or piped via stdin.",
+        help="The prompt. Can be passed as an argument or piped via stdin.",
     )
     parser.add_argument(
         "-i", "--interactive", action="store_true", help="Run in interactive mode."
     )
+    parser.add_argument(
+        "--config", action="store_true", help="Open the configuration prompt."
+    )
     args = parser.parse_args()
 
+    if args.config:
+        config.prompt_for_config()
+        sys.exit(0)
+
     if args.interactive:
-        print("Entering interactive mode. Type 'exit' or 'quit' to end.")
-        start_interactive_session(args.prompt)
+        print("Entering interactive mode. Type '/config' to change settings, or 'exit' to end.")
+        start_interactive_session(args.prompt, cfg)
     elif args.prompt:
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -126,7 +132,7 @@ def main():
         ]
         read_files_in_session = set()
         try:
-            process_llm_turn(messages, read_files_in_session)
+            process_llm_turn(messages, read_files_in_session, cfg)
         except Exception as e:
             print(f"\nAn error occurred: {e}", file=sys.stderr)
             sys.exit(1)
