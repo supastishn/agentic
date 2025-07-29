@@ -72,12 +72,11 @@ def start_interactive_session(initial_prompt, cfg):
         if prompt:
             print(f"\nUser: {prompt}")
             messages.append({"role": "user", "content": prompt})
-        
-        try:
-            process_llm_turn(messages, read_files_in_session, cfg)
-        except Exception as e:
-            print(f"\nAn error occurred: {e}", file=sys.stderr)
-            messages.pop()
+            try:
+                process_llm_turn(messages, read_files_in_session, cfg)
+            except Exception as e:
+                print(f"\nAn error occurred: {e}", file=sys.stderr)
+                messages.pop()
 
         try:
             user_input = input("\nUser: ").strip()
@@ -108,10 +107,7 @@ def main():
     parser.add_argument(
         "prompt", type=str, nargs="?",
         default=sys.stdin.read() if not sys.stdin.isatty() else None,
-        help="The prompt. Can be passed as an argument or piped via stdin.",
-    )
-    parser.add_argument(
-        "-i", "--interactive", action="store_true", help="Run in interactive mode."
+        help="The initial prompt for the interactive session. Can be passed as an argument or piped via stdin.",
     )
     parser.add_argument(
         "--config", action="store_true", help="Open the configuration prompt."
@@ -122,23 +118,8 @@ def main():
         config.prompt_for_config()
         sys.exit(0)
 
-    if args.interactive:
-        print("Entering interactive mode. Type '/config' to change settings, or 'exit' to end.")
-        start_interactive_session(args.prompt, cfg)
-    elif args.prompt:
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": args.prompt},
-        ]
-        read_files_in_session = set()
-        try:
-            process_llm_turn(messages, read_files_in_session, cfg)
-        except Exception as e:
-            print(f"\nAn error occurred: {e}", file=sys.stderr)
-            sys.exit(1)
-    else:
-        parser.print_help()
-        sys.exit(1)
+    print("Starting Agentic interactive session. Type '/config' to change settings, or 'exit' to end.")
+    start_interactive_session(args.prompt, cfg)
 
 if __name__ == "__main__":
     main()
