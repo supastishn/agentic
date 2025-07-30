@@ -3,6 +3,8 @@ import subprocess
 import json
 from pathlib import Path
 import requests
+from rich.console import Console
+from rich.panel import Panel
 
 # --- Tool Implementations ---
 
@@ -122,6 +124,22 @@ def web_fetch(url: str) -> str:
     except requests.exceptions.RequestException as e:
         return f"Error fetching URL {url}: {e}"
 
+def think(thought: str) -> str:
+    """
+    Processes a thought by thinking about it deeply, considering related info, code, etc.
+    This helps in breaking down complex problems and forming a plan.
+    """
+    console = Console()
+    console.print(
+        Panel(
+            thought,
+            title="[bold magenta]Thinking[/]",
+            border_style="magenta",
+            expand=False
+        )
+    )
+    return "Thought successfully processed!"
+
 def save_memory(text: str) -> str:
     """Use to remember a key piece of information by adding it to the conversation context."""
     return f"OK, I will remember this: '{text}'"
@@ -137,6 +155,7 @@ AVAILABLE_TOOLS = {
     "SaveMemory": save_memory,
     "SearchText": search_text,
     "Shell": shell,
+    "Think": think,
     "WebFetch": web_fetch,
     "WriteFile": write_file,
 }
@@ -150,6 +169,7 @@ TOOLS_METADATA = [
     {"type": "function", "function": {"name": "WriteFile", "description": "Writes content to a file, creating it if it doesn't exist or overwriting it completely if it does.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file."}, "content": {"type": "string", "description": "The full content to write to the file."}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "Edit", "description": "Performs a targeted search-and-replace on a file. Safer than WriteFile for small changes. Fails if the search string is not found.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file to edit."}, "search": {"type": "string", "description": "The exact text to find in the file."}, "replace": {"type": "string", "description": "The text to replace the 'search' text with."}}, "required": ["path", "search", "replace"]}}},
     {"type": "function", "function": {"name": "Shell", "description": "Executes a shell command and returns the output. Use with caution.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "The command to execute."}}, "required": ["command"]}}},
+    {"type": "function", "function": {"name": "Think", "description": "Processes a thought by thinking about it deeply, considering related info, code, etc. This helps in breaking down complex problems and forming a plan.", "parameters": {"type": "object", "properties": {"thought": {"type": "string", "description": "The thought to think about deeply. Think about related info, code, etc."}}, "required": ["thought"]}}},
     {"type": "function", "function": {"name": "WebFetch", "description": "Fetches the text content from a URL.", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "The URL to fetch content from."}}, "required": ["url"]}}},
     {"type": "function", "function": {"name": "SaveMemory", "description": "Use to remember a key piece of information. Adds the information to the conversation context.", "parameters": {"type": "object", "properties": {"text": {"type": "string", "description": "The information to remember."}}, "required": ["text"]}}},
 ]
