@@ -184,6 +184,12 @@ def start_interactive_session(initial_prompt, cfg):
                 return to_formatted_text(HTML('<b>> </b>'))
 
             bindings = KeyBindings()
+            
+            @bindings.add("c-c")
+            def _(event):
+                """Handle Ctrl+C as an exit signal."""
+                event.app.exit(exception=KeyboardInterrupt)
+
             @bindings.add("enter")
             def _(event):
                 event.app.exit(result=prompt_buffer.text)
@@ -200,7 +206,7 @@ def start_interactive_session(initial_prompt, cfg):
                     wrap_lines=True
                 ),
                 title=to_formatted_text(HTML("<b>Your Turn</b>")),
-                style="fg:blue"
+                style="fg:cyan"
             )
 
             toolbar_text = '<b>[Enter]</b> to send, <b>[Alt+Enter]</b> or <b>[Ctrl+Enter]</b> for new line, <b>/help</b> for commands.'
