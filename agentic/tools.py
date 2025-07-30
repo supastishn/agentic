@@ -140,6 +140,22 @@ def think(thought: str) -> str:
     )
     return "Thought successfully processed!"
 
+def user_input(question: str) -> str:
+    """
+    Asks the user a question to get feedback, clarification, or the next task.
+    Use this when you are unsure how to proceed or want to confirm a plan.
+    """
+    console = Console()
+    console.print(
+        Panel(
+            question,
+            title="[bold yellow]Input Required[/]",
+            border_style="yellow",
+            expand=False
+        )
+    )
+    return console.input("[bold yellow]Your response: [/]")
+
 def save_memory(text: str) -> str:
     """Use to remember a key piece of information by adding it to the conversation context."""
     return f"OK, I will remember this: '{text}'"
@@ -156,6 +172,7 @@ AVAILABLE_TOOLS = {
     "SearchText": search_text,
     "Shell": shell,
     "Think": think,
+    "UserInput": user_input,
     "WebFetch": web_fetch,
     "WriteFile": write_file,
 }
@@ -170,6 +187,7 @@ TOOLS_METADATA = [
     {"type": "function", "function": {"name": "Edit", "description": "Performs a targeted search-and-replace on a file. Safer than WriteFile for small changes. Fails if the search string is not found.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file to edit."}, "search": {"type": "string", "description": "The exact text to find in the file."}, "replace": {"type": "string", "description": "The text to replace the 'search' text with."}}, "required": ["path", "search", "replace"]}}},
     {"type": "function", "function": {"name": "Shell", "description": "Executes a shell command and returns the output. Use with caution.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "The command to execute."}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "Think", "description": "Processes a thought by thinking about it deeply, considering related info, code, etc. This helps in breaking down complex problems and forming a plan.", "parameters": {"type": "object", "properties": {"thought": {"type": "string", "description": "The thought to think about deeply. Think about related info, code, etc."}}, "required": ["thought"]}}},
+    {"type": "function", "function": {"name": "UserInput", "description": "Asks the user a question to get feedback, clarification, or the next task. Use this when you are unsure how to proceed or want to confirm a plan.", "parameters": {"type": "object", "properties": {"question": {"type": "string", "description": "The question to ask the user."}}, "required": ["question"]}}},
     {"type": "function", "function": {"name": "WebFetch", "description": "Fetches the text content from a URL.", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "The URL to fetch content from."}}, "required": ["url"]}}},
     {"type": "function", "function": {"name": "SaveMemory", "description": "Use to remember a key piece of information. Adds the information to the conversation context.", "parameters": {"type": "object", "properties": {"text": {"type": "string", "description": "The information to remember."}}, "required": ["text"]}}},
 ]
