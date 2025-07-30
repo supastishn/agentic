@@ -180,7 +180,7 @@ def start_interactive_session(initial_prompt, cfg):
             # --- New prompt with a frame ---
             prompt_buffer = Buffer(multiline=True)
 
-            def get_line_prefix():
+            def get_line_prefix(lineno, wrap_count):
                 return to_formatted_text(HTML('<b>> </b>'))
 
             bindings = KeyBindings()
