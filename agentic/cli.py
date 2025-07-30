@@ -24,9 +24,8 @@ SYSTEM_PROMPT = (
     "File System Tools:\n"
     "- Use `list_files` to see the contents of a directory.\n"
     "- Use `read_file` to get the content of a file.\n"
-    "- To edit a file, you must first `read_file` and then use `write_file` with the full, modified content.\n"
-    "- Use `create_file` to create a new file. It will fail if the file already exists.\n"
-    "- Use `write_file` to write or overwrite an existing file.\n\n"
+    "- To edit a file, you must first `read_file`. Then, use `write_file` to perform a targeted search-and-replace. Provide a unique `search` block from the file and the `replace` block with your changes. This will fail if the `search` block is not found.\n"
+    "- Use `create_file` to create a new file. It will fail if the file already exists.\n\n"
     "When using tools, use relative paths from the current working directory. "
     "Always ask for clarification if the user's request is ambiguous."
 )

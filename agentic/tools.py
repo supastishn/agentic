@@ -35,17 +35,26 @@ def read_many_files(paths: list[str], read_files_in_session: set) -> str:
         results.append({"path": path, "content": content})
     return json.dumps(results)
 
-def write_file(path: str, content: str) -> str:
+def write_file(path: str, search: str, replace: str) -> str:
     """
-    Writes content to a file, overwriting it if it exists. Creates parent directories if needed.
+    Replaces a specific block of text in a file (search-and-replace).
+    It fails if the search block is not found.
     """
     p = Path(path)
+    if not p.is_file():
+        return f"Error: File not found at {path}"
+
     try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
-        return f"Successfully wrote to {path}."
+        original_content = p.read_text()
+        if search not in original_content:
+            return "ERROR: Search block is not in the file."
+
+        # Replace only the first occurrence to encourage unique search blocks
+        new_content = original_content.replace(search, replace, 1)
+        p.write_text(new_content)
+        return f"Successfully edited {path}."
     except Exception as e:
-        return f"Error writing to file {path}: {e}"
+        return f"Error editing file {path}: {e}"
 
 def run_command(command: str) -> str:
     """
@@ -179,14 +188,15 @@ TOOLS_METADATA = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Writes or overwrites a file with new content. To edit a file, first read it, then write the full modified content. Creates parent directories if they don't exist.",
+            "description": "Edits a file by replacing a specific block of text (search-and-replace). It fails if the `search` block is not found. For best results, use a unique, multi-line `search` block. Workflow: 1. `read_file()` to get content. 2. Use `write_file()` with a `search` block from the content and a `replace` block with your changes.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "The relative path to the file."},
-                    "content": {"type": "string", "description": "The new, full content of the file."},
+                    "path": {"type": "string", "description": "The relative path to the file to be edited."},
+                    "search": {"type": "string", "description": "The specific, exact block of text to search for."},
+                    "replace": {"type": "string", "description": "The new block of text that will replace the `search` block."},
                 },
-                "required": ["path", "content"],
+                "required": ["path", "search", "replace"],
             },
         },
     },
