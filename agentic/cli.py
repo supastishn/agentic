@@ -162,6 +162,7 @@ def start_interactive_session(initial_prompt, cfg):
     # Define keybindings for multiline input
     bindings = KeyBindings()
     @bindings.add("escape", "enter")
+    @bindings.add("c-enter") # For Ctrl+Enter / Alt+Enter in some terminals
     def _(event):
         event.current_buffer.insert_text("\n")
 
@@ -182,7 +183,7 @@ def start_interactive_session(initial_prompt, cfg):
                 HTML('<b>> </b>'),
                 key_bindings=bindings,
                 bottom_toolbar=HTML(
-                    '<b>[Enter]</b> to send, <b>[Alt+Enter]</b> for new line, or <b>/help</b> for commands.'
+                    '<b>[Enter]</b> to send, <b>[Alt+Enter]</b> or <b>[Ctrl+Enter]</b> for new line, <b>/help</b> for commands.'
                 ),
             ).strip()
 
@@ -207,10 +208,14 @@ def start_interactive_session(initial_prompt, cfg):
             elif user_input.startswith('!'):
                 command = user_input[1:].strip()
                 if command:
-                    output = tools.run_command(command)
-                    console.print(Panel(output, title=f"[bold yellow]! {command}[/]", border_style="yellow"))
+                    # For multiline commands, show only the first line in the panel title
+                    title_command = command.splitlines()[0] if '\n' in command else command
+                    output = tools.shell(command)
+                    console.print(Panel(output, title=f"[bold yellow]! {title_command}[/]", border_style="yellow"))
                 continue
-
+            
+            # It's a prompt for the agent, display it in a panel
+            console.print(Panel(user_input, title="[bold blue]User[/]", border_style="blue"))
             messages.append({"role": "user", "content": user_input})
             try:
                 process_llm_turn(messages, read_files_in_session, cfg, yolo_mode=yolo_mode)
