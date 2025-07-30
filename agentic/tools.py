@@ -35,22 +35,17 @@ def read_many_files(paths: list[str], read_files_in_session: set) -> str:
         results.append({"path": path, "content": content})
     return json.dumps(results)
 
-def edit_file(path: str, search_string: str, replace_string: str) -> str:
+def write_file(path: str, content: str) -> str:
     """
-    Performs a search and replace on a file and writes the changes back.
+    Writes content to a file, overwriting it if it exists. Creates parent directories if needed.
     """
     p = Path(path)
-    if not p.is_file():
-        return f"Error: File not found at {path}"
     try:
-        content = p.read_text()
-        new_content = content.replace(search_string, replace_string)
-        if content == new_content:
-            return "No changes made: search string not found."
-        p.write_text(new_content)
-        return f"Successfully edited {path}."
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+        return f"Successfully wrote to {path}."
     except Exception as e:
-        return f"Error editing file {path}: {e}"
+        return f"Error writing to file {path}: {e}"
 
 def run_command(command: str) -> str:
     """
@@ -73,17 +68,66 @@ def run_command(command: str) -> str:
     except Exception as e:
         return f"Error running command '{command}': {e}"
 
+def list_files(path: str = ".") -> str:
+    """
+    Lists files and directories at a given path.
+    """
+    p = Path(path)
+    if not p.is_dir():
+        return f"Error: Path '{path}' is not a valid directory."
+    
+    try:
+        items = []
+        for item in sorted(p.iterdir()):
+            if item.is_dir():
+                items.append(f"{item.name}/")
+            else:
+                items.append(item.name)
+        return "\n".join(items)
+    except Exception as e:
+        return f"Error listing files at {path}: {e}"
+
+def create_file(path: str, content: str = "") -> str:
+    """
+    Creates a new file with the specified content. Fails if the file already exists.
+    """
+    p = Path(path)
+    if p.exists():
+        return f"Error: File '{path}' already exists. Use write_file to overwrite."
+
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content)
+        return f"Successfully created file: {path}"
+    except Exception as e:
+        return f"Error creating file {path}: {e}"
 
 # --- Tool Definitions for the LLM ---
 
 AVAILABLE_TOOLS = {
     "read_file": read_file,
     "read_many_files": read_many_files,
-    "edit_file": edit_file,
+    "write_file": write_file,
+    "create_file": create_file,
+    "list_files": list_files,
     "run_command": run_command,
 }
 
 TOOLS_METADATA = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_files",
+            "description": "Lists files and directories in a specified path. Use '.' for the current directory.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "The relative path to the directory."},
+                },
+                "required": ["path"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -119,16 +163,30 @@ TOOLS_METADATA = [
     {
         "type": "function",
         "function": {
-            "name": "edit_file",
-            "description": "Searches for a string in a file and replaces it. Overwrites the file.",
+            "name": "create_file",
+            "description": "Creates a new file with specified content. It fails if the file already exists.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "The relative path for the new file."},
+                    "content": {"type": "string", "description": "The initial content of the file."},
+                },
+                "required": ["path", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Writes or overwrites a file with new content. To edit a file, first read it, then write the full modified content. Creates parent directories if they don't exist.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "The relative path to the file."},
-                    "search_string": {"type": "string", "description": "The exact string to find."},
-                    "replace_string": {"type": "string", "description": "The string to replace the search_string with."},
+                    "content": {"type": "string", "description": "The new, full content of the file."},
                 },
-                "required": ["path", "search_string", "replace_string"],
+                "required": ["path", "content"],
             },
         },
     },
@@ -136,7 +194,7 @@ TOOLS_METADATA = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "Executes a shell command and returns the output.",
+            "description": "Executes a shell command and returns the output. Use with caution.",
             "parameters": {
                 "type": "object",
                 "properties": {

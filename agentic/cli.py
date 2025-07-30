@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.prompt import Confirm
 from prompt_toolkit import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.formatted_text import HTML
@@ -19,13 +20,21 @@ console = Console()
 
 SYSTEM_PROMPT = (
     "You are an AI assistant that is an expert in writing and explaining code. "
-    "You have access to a set of tools to interact with the file system and run commands. "
-    "Use them when necessary to answer the user's request. When reading or editing files, "
-    "use relative paths from the current working directory."
+    "You have access to a set of tools to interact with the file system and run commands.\n\n"
+    "File System Tools:\n"
+    "- Use `list_files` to see the contents of a directory.\n"
+    "- Use `read_file` to get the content of a file.\n"
+    "- To edit a file, you must first `read_file` and then use `write_file` with the full, modified content.\n"
+    "- Use `create_file` to create a new file. It will fail if the file already exists.\n"
+    "- Use `write_file` to write or overwrite an existing file.\n\n"
+    "When using tools, use relative paths from the current working directory. "
+    "Always ask for clarification if the user's request is ambiguous."
 )
 
 def process_llm_turn(messages, read_files_in_session, cfg):
-    """Handles a single turn of the LLM, including tool calls."""
+    """Handles a single turn of the LLM, including tool calls and user confirmation."""
+    DANGEROUS_TOOLS = {"write_file", "create_file", "run_command"}
+
     while True:
         response = litellm.completion(
             model=cfg["model"],
@@ -40,33 +49,55 @@ def process_llm_turn(messages, read_files_in_session, cfg):
             messages.append(choice.message)
             tool_calls = choice.message.tool_calls
             
-            with console.status("[bold yellow]Assistant is thinking..."):
-                for tool_call in tool_calls:
-                    tool_name = tool_call.function.name
-                    tool_args = json.loads(tool_call.function.arguments)
-                    console.print(
-                        Panel(
-                            f"[cyan]{tool_name}[/][default]({json.dumps(tool_args)})[/]",
-                            title="[bold yellow]Tool Call[/]",
-                            border_style="yellow",
-                            expand=False,
-                        )
+            for tool_call in tool_calls:
+                tool_name = tool_call.function.name
+                tool_args = json.loads(tool_call.function.arguments)
+                tool_panel_content = f"[cyan]{tool_name}[/][default]({json.dumps(tool_args, indent=2)})[/]"
+                console.print(
+                    Panel(
+                        tool_panel_content,
+                        title="[bold yellow]Tool Call[/]",
+                        border_style="yellow",
+                        expand=False,
                     )
+                )
 
-                    if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
-                        if "read" in tool_name:
-                            tool_args["read_files_in_session"] = read_files_in_session
-                        tool_output = tool_func(**tool_args)
+                if tool_name in DANGEROUS_TOOLS:
+                    if not Confirm.ask(
+                        f"[bold yellow]Do you want to run this command?[/]",
+                        default=False
+                    ):
+                        console.print("[bold red]Skipping tool call.[/]")
+                        # Provide feedback to the LLM that the user cancelled
+                        tool_output = "User denied execution of this tool call."
                         messages.append(
                             {
                                 "role": "tool",
                                 "tool_call_id": tool_call.id,
                                 "name": tool_name,
-                                "content": str(tool_output),
+                                "content": tool_output,
                             }
                         )
-                    else:
-                        console.print(f"[bold red]Warning:[/] Unknown tool '{tool_name}' called.")
+                        continue # Move to the next tool call or re-prompt
+
+                if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
+                    # Inject session-specific state if needed by the tool
+                    if "read" in tool_name:
+                        tool_args["read_files_in_session"] = read_files_in_session
+                    
+                    with console.status("[bold yellow]Executing tool..."):
+                        tool_output = tool_func(**tool_args)
+                    
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "name": tool_name,
+                            "content": str(tool_output),
+                        }
+                    )
+                else:
+                    console.print(f"[bold red]Warning:[/] Unknown tool '{tool_name}' called.")
             continue
         
         full_response = ""
