@@ -58,10 +58,23 @@ def process_llm_turn(messages, read_files_in_session, cfg, yolo_mode: bool = Fal
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
     DANGEROUS_TOOLS = {"WriteFile", "Edit", "Shell"}
 
+    active_provider = cfg.get("active_provider")
+    if active_provider:
+        # New provider-based config
+        provider_config = cfg.get("providers", {}).get(active_provider, {})
+        model_name = provider_config.get("model")
+        api_key = provider_config.get("api_key")
+        # Litellm requires the model in provider/model_name format
+        model = f"{active_provider}/{model_name}" if model_name else None
+    else:
+        # Backwards compatibility for old config format
+        model = cfg.get("model", "gpt-4o") # Default model for old configs
+        api_key = cfg.get("api_key")
+
     while True:
         response = litellm.completion(
-            model=cfg["model"],
-            api_key=cfg["api_key"],
+            model=model,
+            api_key=api_key,
             messages=messages,
             tools=tools.TOOLS_METADATA,
             tool_choice="auto",
@@ -131,7 +144,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, yolo_mode: bool = Fal
         )
         with Live(panel, refresh_per_second=10, console=console) as live:
             stream_response = litellm.completion(
-                model=cfg["model"], api_key=cfg["api_key"], messages=messages, stream=True
+                model=model, api_key=api_key, messages=messages, stream=True
             )
             for chunk in stream_response:
                 content = chunk.choices[0].delta.content
@@ -296,11 +309,21 @@ def start_interactive_session(initial_prompt, cfg):
 def main():
     """Main function for the agentic CLI tool."""
     cfg = config.load_config()
-    if not cfg.get("api_key"):
+
+    def is_config_valid(cfg):
+        active_provider = cfg.get("active_provider")
+        if active_provider:
+            # New config: check for model and key for the active provider
+            p_config = cfg.get("providers", {}).get(active_provider, {})
+            return "api_key" in p_config and "model" in p_config
+        # Old config: just check for api_key, model might have a default
+        return "api_key" in cfg
+
+    if not is_config_valid(cfg):
         console.print("[bold yellow]Welcome to Agentic! Please configure your API key and model.[/]")
         cfg = config.prompt_for_config()
-        if not cfg.get("api_key"):
-            console.print("[bold red]API key is required to run. Exiting.[/]")
+        if not is_config_valid(cfg):
+            console.print("[bold red]Active provider is not fully configured. Exiting.[/]")
             sys.exit(1)
 
     parser = argparse.ArgumentParser(
