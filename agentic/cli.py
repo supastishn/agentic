@@ -9,9 +9,10 @@ from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Confirm
-from prompt_toolkit.application import Application
+from prompt_toolkit.application import Application, get_app
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.filters import is_done
+from prompt_toolkit.filters import Condition, is_done
+from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
@@ -42,6 +43,16 @@ SYSTEM_PROMPT = (
     "- `Shell`: Executes shell commands. Powerful but dangerous. Use it only when necessary.\n\n"
     "Always use relative paths. Be methodical. Think step by step."
 )
+
+@Condition
+def _should_add_to_history():
+    """Return True if the current input should be added to history."""
+    text = get_app().current_buffer.text.strip()
+    # Don't save empty lines or commands to history
+    if not text or text.startswith(('/', '!')) or text.lower() == "exit":
+        return False
+    return True
+
 
 def process_llm_turn(messages, read_files_in_session, cfg, yolo_mode: bool = False):
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
@@ -166,6 +177,7 @@ def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     read_files_in_session = set()
+    history = InMemoryHistory()
     yolo_mode = False
 
     # Handle initial prompt if provided
@@ -181,7 +193,11 @@ def start_interactive_session(initial_prompt, cfg):
     while True:
         try:
             # --- New prompt with a frame ---
-            prompt_buffer = Buffer(multiline=True)
+            prompt_buffer = Buffer(
+                multiline=True,
+                history=history,
+                add_to_history=_should_add_to_history
+            )
 
             def get_line_prefix(lineno, wrap_count):
                 return to_formatted_text(HTML('<b>> </b>'))
