@@ -9,9 +9,16 @@ from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Confirm
-from prompt_toolkit import PromptSession
+from prompt_toolkit.application import Application
+from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.filters import is_done
+from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
+from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
+from prompt_toolkit.layout.layout import Layout
+from prompt_toolkit.widgets import Frame
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.formatted_text import HTML
+from prompt_toolkit.formatted_text import to_formatted_text
 
 from . import tools
 from . import config
@@ -156,15 +163,7 @@ def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     read_files_in_session = set()
-    session = PromptSession()
     yolo_mode = False
-
-    # Define keybindings for multiline input
-    bindings = KeyBindings()
-    @bindings.add("escape", "enter")
-    @bindings.add("c-j") # Binds Ctrl+J (often sent by Ctrl+Enter)
-    def _(event):
-        event.current_buffer.insert_text("\n")
 
     # Handle initial prompt if provided
     if initial_prompt:
@@ -178,14 +177,58 @@ def start_interactive_session(initial_prompt, cfg):
 
     while True:
         try:
-            console.rule("[bold blue]Your Turn[/]", style="blue")
-            user_input = session.prompt(
-                HTML('<b>> </b>'),
-                key_bindings=bindings,
-                bottom_toolbar=HTML(
-                    '<b>[Enter]</b> to send, <b>[Alt+Enter]</b> or <b>[Ctrl+Enter]</b> for new line, <b>/help</b> for commands.'
+            # --- New prompt with a frame ---
+            prompt_buffer = Buffer(multiline=True)
+
+            def get_line_prefix():
+                return to_formatted_text(HTML('<b>> </b>'))
+
+            bindings = KeyBindings()
+            @bindings.add("enter")
+            def _(event):
+                event.app.exit(result=prompt_buffer.text)
+
+            @bindings.add("escape", "enter")
+            @bindings.add("c-j")
+            def _(event):
+                event.current_buffer.insert_text('\n')
+            
+            input_frame = Frame(
+                Window(
+                    content=BufferControl(buffer=prompt_buffer),
+                    get_line_prefix=get_line_prefix,
+                    wrap_lines=True
                 ),
-            ).strip()
+                title=to_formatted_text(HTML("<b>Your Turn</b>")),
+                style="fg:blue"
+            )
+
+            toolbar_text = '<b>[Enter]</b> to send, <b>[Alt+Enter]</b> or <b>[Ctrl+Enter]</b> for new line, <b>/help</b> for commands.'
+            toolbar = ConditionalContainer(
+                Window(
+                    content=FormattedTextControl(to_formatted_text(HTML(toolbar_text))),
+                    height=1,
+                    style="class:bottom-toolbar"
+                ),
+                filter=~is_done
+            )
+
+            layout = Layout(HSplit([input_frame, toolbar]))
+            
+            app = Application(
+                layout=layout,
+                key_bindings=bindings,
+                mouse_support=True,
+                full_screen=False,
+            )
+
+            user_input_text = app.run()
+            
+            if user_input_text is None: # Ctrl+C/D in prompt
+                raise EOFError
+
+            user_input = user_input_text.strip()
+            # --- End new prompt logic ---
 
             if not user_input:
                 continue
@@ -208,14 +251,11 @@ def start_interactive_session(initial_prompt, cfg):
             elif user_input.startswith('!'):
                 command = user_input[1:].strip()
                 if command:
-                    # For multiline commands, show only the first line in the panel title
                     title_command = command.splitlines()[0] if '\n' in command else command
                     output = tools.shell(command)
                     console.print(Panel(output, title=f"[bold yellow]! {title_command}[/]", border_style="yellow"))
                 continue
             
-            # It's a prompt for the agent, display it in a panel
-            console.print(Panel(user_input, title="[bold blue]User[/]", border_style="blue"))
             messages.append({"role": "user", "content": user_input})
             try:
                 process_llm_turn(messages, read_files_in_session, cfg, yolo_mode=yolo_mode)
