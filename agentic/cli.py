@@ -76,7 +76,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, yolo_mode: bool = Fal
 
                 if tool_name in DANGEROUS_TOOLS and not yolo_mode:
                     if not Confirm.ask(
-                        f"[bold yellow]Do you want to run this command?[/]",
+                        f"[bold yellow]Execute the [cyan]{tool_name}[/cyan] tool with the arguments above?[/]",
                         default=False
                     ):
                         console.print("[bold red]Skipping tool call.[/]")
