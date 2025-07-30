@@ -140,7 +140,7 @@ def display_help():
 
 **Hotkeys:**
 - **Enter**: Send your message to the agent.
-- **Alt+Enter** or **Esc+Enter**: Add a new line to your message.
+- **Alt+Enter** or **Ctrl+Enter**: Add a new line to your message.
 """
     console.print(
         Panel(
@@ -162,7 +162,7 @@ def start_interactive_session(initial_prompt, cfg):
     # Define keybindings for multiline input
     bindings = KeyBindings()
     @bindings.add("escape", "enter")
-    @bindings.add("c-enter") # For Ctrl+Enter / Alt+Enter in some terminals
+    @bindings.add("c-j") # Binds Ctrl+J (often sent by Ctrl+Enter)
     def _(event):
         event.current_buffer.insert_text("\n")
 
