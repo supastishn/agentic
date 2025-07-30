@@ -9,9 +9,9 @@ from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Confirm
-from prompt_toolkit.application import Application, get_app
+from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.filters import Condition, is_done
+from prompt_toolkit.filters import is_done
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
@@ -44,10 +44,9 @@ SYSTEM_PROMPT = (
     "Always use relative paths. Be methodical. Think step by step."
 )
 
-@Condition
-def _should_add_to_history():
-    """Return True if the current input should be added to history."""
-    text = get_app().current_buffer.text.strip()
+def _should_add_to_history(text: str):
+    """Return True if the given input text should be added to history."""
+    text = text.strip()
     # Don't save empty lines or commands to history
     if not text or text.startswith(('/', '!')) or text.lower() == "exit":
         return False
@@ -208,8 +207,7 @@ def start_interactive_session(initial_prompt, cfg):
             # --- New prompt with a frame ---
             prompt_buffer = Buffer(
                 multiline=True,
-                history=history,
-                add_to_history=_should_add_to_history
+                history=history
             )
 
             def get_line_prefix(lineno, wrap_count):
@@ -264,6 +262,9 @@ def start_interactive_session(initial_prompt, cfg):
             
             if user_input_text is None: # Ctrl+C/D in prompt
                 raise EOFError
+
+            if _should_add_to_history(user_input_text):
+                history.append_string(user_input_text)
 
             user_input = user_input_text.strip()
             # --- End new prompt logic ---
