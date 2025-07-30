@@ -31,7 +31,7 @@ SYSTEM_PROMPT = (
     "Always ask for clarification if the user's request is ambiguous."
 )
 
-def process_llm_turn(messages, read_files_in_session, cfg):
+def process_llm_turn(messages, read_files_in_session, cfg, yolo_mode: bool = False):
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
     DANGEROUS_TOOLS = {"write_file", "create_file", "run_command"}
 
@@ -62,7 +62,7 @@ def process_llm_turn(messages, read_files_in_session, cfg):
                     )
                 )
 
-                if tool_name in DANGEROUS_TOOLS:
+                if tool_name in DANGEROUS_TOOLS and not yolo_mode:
                     if not Confirm.ask(
                         f"[bold yellow]Do you want to run this command?[/]",
                         default=False
@@ -125,11 +125,37 @@ def process_llm_turn(messages, read_files_in_session, cfg):
         messages.append({"role": "assistant", "content": full_response})
         break
 
+def display_help():
+    """Displays the help menu for interactive commands."""
+    help_text = """
+| Command         | Description                                                 |
+|-----------------|-------------------------------------------------------------|
+| `/help`         | Show this help message.                                     |
+| `/config`       | Open the configuration menu.                                |
+| `/yolo`         | Toggle YOLO mode (disables safety confirmations).           |
+| `/exit` or `exit` | Exit the interactive session.                               |
+| `! <command>`   | Execute a shell command directly from your terminal.        |
+
+**Hotkeys:**
+- **Enter**: Send your message to the agent.
+- **Alt+Enter** or **Esc+Enter**: Add a new line to your message.
+"""
+    console.print(
+        Panel(
+            Markdown(help_text),
+            title="[bold cyan]Help Menu[/]",
+            border_style="cyan",
+            expand=False,
+        )
+    )
+
+
 def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     read_files_in_session = set()
     session = PromptSession()
+    yolo_mode = False
 
     # Define keybindings for multiline input
     bindings = KeyBindings()
@@ -142,7 +168,7 @@ def start_interactive_session(initial_prompt, cfg):
         console.print(Panel(initial_prompt, title="[bold blue]User[/]", border_style="blue"))
         messages.append({"role": "user", "content": initial_prompt})
         try:
-            process_llm_turn(messages, read_files_in_session, cfg)
+            process_llm_turn(messages, read_files_in_session, cfg, yolo_mode=yolo_mode)
         except Exception as e:
             console.print(f"[bold red]An error occurred:[/] {e}")
             messages.pop()
@@ -154,33 +180,46 @@ def start_interactive_session(initial_prompt, cfg):
                 HTML('<b>> </b>'),
                 key_bindings=bindings,
                 bottom_toolbar=HTML(
-                    '<b>[Enter]</b> to send, <b>[Alt+Enter]</b> for new line, <b>!cmd</b> to run shell.'
+                    '<b>[Enter]</b> to send, <b>[Alt+Enter]</b> for new line, or <b>/help</b> for commands.'
                 ),
             ).strip()
 
             if not user_input:
                 continue
 
-            if user_input.startswith('!'):
+            if user_input.lower() == "/help":
+                display_help()
+                continue
+            elif user_input.lower() == "/yolo":
+                yolo_mode = not yolo_mode
+                status = "[bold green]ON[/]" if yolo_mode else "[bold red]OFF[/]"
+                console.print(f"👉 YOLO Mode is now {status}.")
+                if yolo_mode:
+                    console.print("[yellow]Warning: Dangerous commands will execute without confirmation.[/yellow]")
+                continue
+            elif user_input.lower() in ["/exit", "exit"]:
+                break
+            elif user_input.lower() == "/config":
+                cfg = config.prompt_for_config()
+                continue
+            elif user_input.startswith('!'):
                 command = user_input[1:].strip()
                 if command:
                     output = tools.run_command(command)
                     console.print(Panel(output, title=f"[bold yellow]! {command}[/]", border_style="yellow"))
                 continue
-            elif user_input.lower() == "/config":
-                cfg = config.prompt_for_config()
-                continue
 
             messages.append({"role": "user", "content": user_input})
             try:
-                process_llm_turn(messages, read_files_in_session, cfg)
+                process_llm_turn(messages, read_files_in_session, cfg, yolo_mode=yolo_mode)
             except Exception as e:
                 console.print(f"[bold red]An error occurred:[/] {e}")
                 messages.pop()
 
         except (KeyboardInterrupt, EOFError):
-            console.print("\n[bold yellow]Exiting interactive mode.[/]")
             break
+    
+    console.print("\n[bold yellow]Exiting interactive mode.[/]")
 
 def main():
     """Main function for the agentic CLI tool."""
@@ -211,7 +250,7 @@ def main():
 
     console.print(
         Panel(
-            "Type '/config' to change settings, or 'exit' to end.",
+            "Type '/help' for a list of commands.",
             title="[bold green]Agentic[/]",
             subtitle="[cyan]Interactive Mode[/]",
             expand=False,
