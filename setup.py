@@ -17,6 +17,7 @@ setup(
         "litellm",
         "prompt-toolkit",
         "python-dotenv",
+        "requests",
         "rich",
         "simple-term-menu",
     ],

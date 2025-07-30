@@ -19,20 +19,23 @@ from . import config
 console = Console()
 
 SYSTEM_PROMPT = (
-    "You are an AI assistant that is an expert in writing and explaining code. "
-    "You have access to a set of tools to interact with the file system and run commands.\n\n"
-    "File System Tools:\n"
-    "- Use `list_files` to see the contents of a directory.\n"
-    "- Use `read_file` to get the content of a file.\n"
-    "- To edit a file, you must first `read_file`. Then, use `write_file` to perform a targeted search-and-replace. Provide a unique `search` block from the file and the `replace` block with your changes. This will fail if the `search` block is not found.\n"
-    "- Use `create_file` to create a new file. It will fail if the file already exists.\n\n"
-    "When using tools, use relative paths from the current working directory. "
-    "Always ask for clarification if the user's request is ambiguous."
+    "You are an AI assistant expert in software development. You have access to a powerful set of tools.\n\n"
+    "**Workflow Strategy:**\n"
+    "1. **Explore:** Start by understanding your environment. Use `ReadFolder` to see files and `FindFiles` to locate specific ones.\n"
+    "2. **Read & Analyze:** Use `ReadFile` or `ReadManyFiles` to examine file contents. Use `SearchText` to find specific code snippets or text within files.\n"
+    "3. **Plan & Act:** Based on your analysis, decide whether to `Edit` an existing file, `WriteFile` to create or overwrite one, or run a `Shell` command.\n"
+    "4. **Memory:** Use `SaveMemory` to keep track of important information during your session.\n"
+    "5. **Web:** Use `WebFetch` to get information from web pages.\n\n"
+    "**Tool Guidelines:**\n"
+    "- `WriteFile`: Creates a new file or completely overwrites an existing one. Use with caution.\n"
+    "- `Edit`: Performs a targeted search-and-replace on a file. It's safer for small changes. First, `ReadFile`, then provide a unique `search` string and your `replace` content.\n"
+    "- `Shell`: Executes shell commands. It is powerful but dangerous. Use it only when necessary.\n\n"
+    "Always use relative paths. Be methodical. Think step by step."
 )
 
 def process_llm_turn(messages, read_files_in_session, cfg, yolo_mode: bool = False):
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
-    DANGEROUS_TOOLS = {"write_file", "create_file", "run_command"}
+    DANGEROUS_TOOLS = {"WriteFile", "Edit", "Shell"}
 
     while True:
         response = litellm.completion(
@@ -81,7 +84,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, yolo_mode: bool = Fal
 
                 if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
                     # Inject session-specific state if needed by the tool
-                    if "read" in tool_name:
+                    if tool_name in ["ReadFile", "ReadManyFiles"]:
                         tool_args["read_files_in_session"] = read_files_in_session
                     
                     with console.status("[bold yellow]Executing tool..."):
