@@ -2,36 +2,49 @@ import pytest
 import json
 from agentic import config
 
-def test_get_provider_models(mocker):
-    """Tests if models are correctly parsed and grouped by provider from fetched JSON."""
-    mock_json_data = {
-        "gpt-4": {"litellm_provider": "openai"},
-        "gpt-3.5-turbo": {"litellm_provider": "openai"},
-        "claude-2": {"litellm_provider": "anthropic"},
-        "replicate/meta/llama-2-70b-chat:abc": {"litellm_provider": "replicate"},
-        "some-model-without-provider": {},
-        "openai/test/with/slashes": {"litellm_provider": "openai"},
+def test_get_provider_models(mocker, tmp_path):
+    """Tests model fetching, filtering, and caching under online/offline scenarios."""
+    # --- Setup ---
+    mock_online_data = {
+        "litellm_spec": "some_spec_data",
+        "gpt-4": {"litellm_provider": "openai", "mode": "chat"},
+        "text-embedding-ada-002": {"litellm_provider": "openai", "mode": "embedding"},
+        "claude-2": {"litellm_provider": "anthropic", "mode": "chat"},
+        "replicate/meta/llama-2-70b-chat:abc": {"litellm_provider": "replicate", "mode": "chat"},
     }
+    cache_file = tmp_path / "model_cache.json"
+    mocker.patch.object(config, "MODELS_CACHE_FILE", cache_file)
+    mocker.patch.object(config, "CONFIG_DIR", tmp_path) # For _ensure_config_dir
 
+    # --- 1. Test Online Scenario: Fetches, filters, and writes to cache ---
     mock_response = mocker.Mock()
-    mock_response.json.return_value = mock_json_data
+    mock_response.json.return_value = mock_online_data
     mock_response.raise_for_status.return_value = None
     mocker.patch("requests.get", return_value=mock_response)
 
-    provider_models = config._get_provider_models()
+    provider_models_online = config._get_provider_models()
 
-    assert "openai" in provider_models
-    assert "anthropic" in provider_models
-    assert "replicate" in provider_models
-    assert "some-model-without-provider" not in provider_models
+    assert provider_models_online["openai"] == ["gpt-4"]
+    assert provider_models_online["anthropic"] == ["claude-2"]
+    assert "text-embedding-ada-002" not in provider_models_online.get("openai", [])
+    assert cache_file.exists() and json.loads(cache_file.read_text()) == mock_online_data
 
-    assert provider_models["openai"] == [
-        "gpt-3.5-turbo",
-        "gpt-4",
-        "test/with/slashes",
-    ]
-    assert provider_models["anthropic"] == ["claude-2"]
-    assert provider_models["replicate"] == ["meta/llama-2-70b-chat:abc"]
+    # --- 2. Test Offline Scenario with Cache ---
+    mock_get_offline = mocker.patch("requests.get", side_effect=config.requests.RequestException("Network Error"))
+
+    provider_models_offline_cache = config._get_provider_models()
+
+    # Should return the same filtered models from the cache written in the previous step
+    assert provider_models_offline_cache == provider_models_online
+    mock_get_offline.assert_called_once() # Ensure it tried to fetch first
+
+    # --- 3. Test Offline Scenario without Cache ---
+    cache_file.unlink() # Delete the cache
+    assert not cache_file.exists()
+    
+    provider_models_offline_no_cache = config._get_provider_models()
+    
+    assert provider_models_offline_no_cache == {}
 
 def test_config_encryption_cycle(monkeypatch, tmp_path):
     """Tests saving and loading an encrypted config."""

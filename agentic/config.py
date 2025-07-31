@@ -10,20 +10,46 @@ from rich.panel import Panel
 from simple_term_menu import TerminalMenu
 
 def _get_provider_models() -> dict:
-    """Gets available models from LiteLLM's model list JSON and groups them by provider."""
+    """Gets available chat models from LiteLLM JSON, caches them, and groups them by provider."""
     MODELS_URL = "https://raw.githubusercontent.com/BerriAI/litellm/refs/heads/main/model_prices_and_context_window.json"
-    provider_models = {}
     console = Console()
+    model_data = {}
 
+    # 1. Try to fetch from URL and update cache
     try:
         response = requests.get(MODELS_URL, timeout=10)
         response.raise_for_status()
         model_data = response.json()
-    except (requests.RequestException, json.JSONDecodeError) as e:
+        
+        _ensure_config_dir()
+        with open(MODELS_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(model_data, f)
+    except requests.RequestException as e:
         console.print(f"[bold yellow]Warning:[/] Could not fetch model list from LiteLLM repo: {e}")
-        return {}
-    
+        # 2. If fetch fails, try to load from cache
+        if MODELS_CACHE_FILE.exists():
+            console.print(f"Attempting to use cached model list from '{MODELS_CACHE_FILE}'.")
+            try:
+                with open(MODELS_CACHE_FILE, "r", encoding="utf-8") as f:
+                    model_data = json.load(f)
+            except (json.JSONDecodeError, IOError) as cache_e:
+                console.print(f"[bold red]Error:[/] Could not read or parse model cache file: {cache_e}")
+                return {} # Failed to load cache, so we can't proceed
+        else:
+            console.print("[bold red]Error:[/] No cached model list found. Connect to the internet to download it.")
+            return {} # No internet and no cache, so we can't proceed
+
+    # 3. Parse the loaded model data
+    provider_models = {}
     for model_key, model_info in model_data.items():
+        # Filter out non-dictionary entries and specific keys like 'litellm_spec'
+        if not isinstance(model_info, dict) or model_key == "litellm_spec":
+            continue
+
+        # Filter for chat models only
+        if model_info.get("mode") != "chat":
+            continue
+
         provider = model_info.get("litellm_provider")
         if not provider:
             continue
@@ -54,6 +80,7 @@ def _get_provider_models() -> dict:
 CONFIG_DIR = Path.home() / ".agentic-pypi"
 CONFIG_FILE = CONFIG_DIR / "config.encrypted"
 KEY_FILE = CONFIG_DIR / "config.key"
+MODELS_CACHE_FILE = CONFIG_DIR / "model_cache.json"
 
 # --- Key Management ---
 
