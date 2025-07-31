@@ -1,6 +1,7 @@
 import os
 import subprocess
 import json
+import glob
 from pathlib import Path
 import requests
 from rich.console import Console
@@ -51,10 +52,11 @@ def read_folder(path: str = ".") -> str:
 def find_files(pattern: str) -> str:
     """Finds files matching a glob pattern recursively."""
     try:
-        files = [str(p) for p in Path.cwd().rglob(pattern)]
+        # Use glob.glob for robust cross-platform support of absolute/relative paths.
+        files = glob.glob(pattern, recursive=True)
         if not files:
             return f"No files found matching pattern: {pattern}"
-        return "\n".join(files)
+        return "\n".join(sorted(files)) # Sorting for consistent output
     except Exception as e:
         return f"Error finding files: {e}"
 
@@ -121,7 +123,7 @@ def web_fetch(url: str) -> str:
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         return response.text
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         return f"Error fetching URL {url}: {e}"
 
 def think(thought: str) -> str:
