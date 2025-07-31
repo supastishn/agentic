@@ -112,7 +112,7 @@ def prompt_for_config() -> dict:
             "1. Select Provider",
             "2. Edit Model",
             "3. Edit API Key",
-            "",
+            None,  # Use None for a separator
             "4. Save and Exit",
             "5. Exit without Saving",
         ]
@@ -126,10 +126,10 @@ def prompt_for_config() -> dict:
             cycle_cursor=True,
             clear_screen=False,  # We handle clearing
         )
-        
+
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 5: # Exit without Saving or ESC
+        if selected_index is None or selected_index == 4:  # Exit without Saving or ESC
             console.print("\n[yellow]Configuration changes discarded.[/yellow]")
             return original_config
 
@@ -138,11 +138,13 @@ def prompt_for_config() -> dict:
                 console.print("\n[yellow]Could not dynamically determine providers.[/yellow]")
                 console.input("Press Enter to continue...")
                 continue
-            
+
             provider_menu = TerminalMenu(all_providers, title="Select a provider")
             selected_provider_index = provider_menu.show()
             if selected_provider_index is not None:
-                config_to_edit["active_provider"] = all_providers[selected_provider_index]
+                config_to_edit["active_provider"] = all_providers[
+                    selected_provider_index
+                ]
 
         elif selected_index == 1:  # Edit Model
             active_provider = config_to_edit.get("active_provider")
@@ -153,12 +155,22 @@ def prompt_for_config() -> dict:
 
             models = provider_models.get(active_provider, [])
             if not models:
-                console.print(f"\n[yellow]No models found for '{active_provider}'. You can enter one manually.[/yellow]")
-                new_model = console.input(f"Enter model for {active_provider}: ").strip()
+                console.print(
+                    f"\n[yellow]No models found for '{active_provider}'. You can enter one manually.[/yellow]"
+                )
+                new_model = console.input(
+                    f"Enter model for {active_provider}: "
+                ).strip()
             else:
-                model_menu = TerminalMenu(models, title=f"Select a model for {active_provider}")
+                model_menu = TerminalMenu(
+                    models, title=f"Select a model for {active_provider}"
+                )
                 selected_model_index = model_menu.show()
-                new_model = models[selected_model_index] if selected_model_index is not None else None
+                new_model = (
+                    models[selected_model_index]
+                    if selected_model_index is not None
+                    else None
+                )
 
             if new_model:
                 providers = config_to_edit.setdefault("providers", {})
@@ -171,27 +183,34 @@ def prompt_for_config() -> dict:
                 console.print("\n[yellow]Please select a provider first.[/yellow]")
                 console.input("Press Enter to continue...")
                 continue
-            
-            new_api_key = console.input(f"Enter new API Key for {active_provider}: ").strip()
+
+            new_api_key = console.input(
+                f"Enter new API Key for {active_provider}: "
+            ).strip()
             if new_api_key:
                 providers = config_to_edit.setdefault("providers", {})
                 provider_cfg = providers.setdefault(active_provider, {})
                 provider_cfg["api_key"] = new_api_key
 
-        elif selected_index == 4:  # Save and Exit
+        elif selected_index == 3:  # Save and Exit
             active_provider = config_to_edit.get("active_provider")
             if not active_provider:
-                console.print("\n[bold red]An active provider must be selected. Configuration not saved.[/bold red]")
+                console.print(
+                    "\n[bold red]An active provider must be selected. Configuration not saved.[/bold red]"
+                )
                 console.input("Press Enter to continue...")
                 continue
-            
-            provider_config = config_to_edit.get("providers", {}).get(active_provider, {})
+
+            provider_config = config_to_edit.get("providers", {}).get(
+                active_provider, {}
+            )
             if not provider_config.get("model") or not provider_config.get("api_key"):
-                console.print(f"[bold red]Model and API Key are required for provider '{active_provider}'. Configuration not saved.[/bold red]")
+                console.print(
+                    f"[bold red]Model and API Key are required for provider '{active_provider}'. Configuration not saved.[/bold red]"
+                )
                 console.input("Press Enter to continue...")
                 continue
 
             save_config(config_to_edit)
             console.print("\n[bold green]✔ Configuration saved successfully.[/bold green]")
             return config_to_edit
-        # If index is 3 (the separator), the loop continues, redrawing the menu.
