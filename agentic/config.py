@@ -3,22 +3,47 @@ import json
 from pathlib import Path
 import sys
 import litellm
+import requests
 from cryptography.fernet import Fernet
 from rich.console import Console
 from rich.panel import Panel
 from simple_term_menu import TerminalMenu
 
 def _get_provider_models() -> dict:
-    """Gets available models from litellm and groups them by provider."""
+    """Gets available models from LiteLLM's model list JSON and groups them by provider."""
+    MODELS_URL = "https://raw.githubusercontent.com/BerriAI/litellm/refs/heads/main/model_prices_and_context_window.json"
     provider_models = {}
-    # litellm.model_list can be large, so we process it efficiently
-    for model in litellm.model_list:
-        if "/" in model:
-            provider, model_name = model.split("/", 1)
-            if provider not in provider_models:
-                provider_models[provider] = []
-            provider_models[provider].append(model_name)
+    console = Console()
+
+    try:
+        response = requests.get(MODELS_URL, timeout=10)
+        response.raise_for_status()
+        model_data = response.json()
+    except (requests.RequestException, json.JSONDecodeError) as e:
+        console.print(f"[bold yellow]Warning:[/] Could not fetch model list from LiteLLM repo: {e}")
+        return {}
     
+    for model_key, model_info in model_data.items():
+        provider = model_info.get("litellm_provider")
+        if not provider:
+            continue
+        
+        model_name = ""
+        # If the model key from JSON is prefixed with the provider, strip it.
+        # e.g., "replicate/..." -> "..."
+        if model_key.startswith(f"{provider}/"):
+            model_name = model_key.split("/", 1)[1]
+        else:
+            # Otherwise, use the key as the model name.
+            # e.g., "gpt-4" -> "gpt-4"
+            model_name = model_key
+        
+        if provider not in provider_models:
+            provider_models[provider] = []
+        
+        if model_name:
+            provider_models[provider].append(model_name)
+
     # Sort model names for consistent display
     for provider in provider_models:
         provider_models[provider].sort()
