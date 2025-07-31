@@ -11,6 +11,8 @@ from rich.panel import Panel
 from rich.prompt import Confirm
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.document import Document
 from prompt_toolkit.filters import is_done
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
@@ -196,6 +198,27 @@ def display_help():
     )
 
 
+COMMANDS = ["/help", "/config", "/yolo", "/exit"]
+
+
+class CommandCompleter(Completer):
+    """A completer for shell-like commands that start with /."""
+
+    def get_completions(self, document: Document, complete_event):
+        # The whole text buffer is considered for a command.
+        text = document.text.lstrip()
+
+        # Only complete if the input starts with '/', and contains no spaces or newlines.
+        # This is because commands are expected to be the sole input in the buffer.
+        if text.startswith("/") and " " not in text and "\n" not in text:
+            for command in COMMANDS:
+                if command.startswith(text):
+                    yield Completion(
+                        command,
+                        start_position=-len(text),
+                    )
+
+
 def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -218,7 +241,9 @@ def start_interactive_session(initial_prompt, cfg):
             # --- New prompt with a frame ---
             prompt_buffer = Buffer(
                 multiline=True,
-                history=history
+                history=history,
+                completer=CommandCompleter(),
+                complete_while_typing=True,
             )
 
             def get_line_prefix(lineno, wrap_count):
