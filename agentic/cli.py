@@ -28,7 +28,7 @@ from . import config
 
 console = Console()
 
-SYSTEM_PROMPT = (
+CODE_SYSTEM_PROMPT = (
     "You are an AI assistant expert in software development. You have access to a powerful set of tools.\n"
     "Your primary directive is to ALWAYS understand the project context before providing code or solutions.\n\n"
     "**Mandatory Workflow:**\n"
@@ -45,6 +45,38 @@ SYSTEM_PROMPT = (
     "- `Shell`: Executes shell commands. Powerful but dangerous. Use it only when necessary.\n\n"
     "Always use relative paths. Be methodical. Think step by step."
 )
+
+ASK_SYSTEM_PROMPT = (
+    "You are an AI assistant designed to answer questions and provide information. You are in 'ask' mode.\n"
+    "Your goal is to be a helpful and knowledgeable resource. You can read files and browse the web to find answers.\n\n"
+    "**Workflow:**\n"
+    "1. **Understand the Question:** Analyze the user's query to fully grasp what they are asking.\n"
+    "2. **Gather Information:** Use `ReadFile` to examine relevant files and `WebFetch` to get external information if necessary.\n"
+    "3. **Synthesize and Answer:** Combine the information you've gathered to provide a comprehensive and clear answer. Use `Think` to structure your thoughts.\n\n"
+    "**Tool Guidelines:**\n"
+    "- You do **not** have access to tools that modify files (`WriteFile`, `Edit`) or execute shell commands (`Shell`).\n"
+    "- Focus on providing information and answering questions."
+)
+
+ARCHITECT_SYSTEM_PROMPT = (
+    "You are a principal AI software architect. You are in 'architect' mode.\n"
+    "Your purpose is to create high-level plans and designs for software projects. Do NOT write implementation code.\n\n"
+    "**Workflow:**\n"
+    "1. **Gather Context:** Use `ReadFolder` and `ReadFile` to understand the existing project structure and code.\n"
+    "2. **Deconstruct the Request:** Use the `Think` tool to break down the user's request into architectural components and requirements.\n"
+    "3. **Design the Plan:** Formulate a detailed, step-by-step plan. Describe new files to be created, changes to existing files, and the overall structure. Do not write the code for these changes.\n"
+    "4. **Seek Clarification:** Use `UserInput` if the requirements are ambiguous or to get feedback on your proposed plan.\n\n"
+    "**Tool Guidelines:**\n"
+    "- Your primary tool is `Think` to outline your architectural plan.\n"
+    "- You can read files, but you cannot write or edit them. You cannot use `Shell`.\n"
+    "- Your final output should be a plan, not executable code."
+)
+
+SYSTEM_PROMPTS = {
+    "code": CODE_SYSTEM_PROMPT,
+    "ask": ASK_SYSTEM_PROMPT,
+    "architect": ARCHITECT_SYSTEM_PROMPT,
+}
 
 def is_config_valid(cfg):
     """Checks if the provided configuration is valid."""
@@ -66,9 +98,17 @@ def _should_add_to_history(text: str):
     return True
 
 
-def process_llm_turn(messages, read_files_in_session, cfg, yolo_mode: bool = False):
+def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo_mode: bool = False):
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
     DANGEROUS_TOOLS = {"WriteFile", "Edit", "Shell"}
+
+    # Filter tools based on mode
+    available_tools_metadata = tools.TOOLS_METADATA
+    if agent_mode in ["ask", "architect"]:
+        disallowed_tools = {"WriteFile", "Edit", "Shell"}
+        available_tools_metadata = [
+            t for t in tools.TOOLS_METADATA if t["function"]["name"] not in disallowed_tools
+        ]
 
     active_provider = cfg.get("active_provider")
     if active_provider:
@@ -88,7 +128,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, yolo_mode: bool = Fal
             model=model,
             api_key=api_key,
             messages=messages,
-            tools=tools.TOOLS_METADATA,
+            tools=available_tools_metadata,
             tool_choice="auto",
         )
 
@@ -181,6 +221,7 @@ def display_help():
 | `/help`         | Show this help message.                                     |
 | `/config`       | Open the configuration menu.                                |
 | `/yolo`         | Toggle YOLO mode (disables safety confirmations).           |
+| `/mode <name>`  | Switch agent mode (code, ask, architect).                   |
 | `/exit` or `exit` | Exit the interactive session.                               |
 | `! <command>`   | Execute a shell command directly from your terminal.        |
 
@@ -198,8 +239,8 @@ def display_help():
     )
 
 
-COMMANDS = ["/help", "/config", "/yolo", "/exit"]
-
+MODES = ["code", "ask", "architect"]
+COMMANDS = ["/help", "/config", "/yolo", "/exit", "/mode"]
 
 class CommandCompleter(Completer):
     """A completer for shell-like commands that start with /."""
@@ -211,17 +252,23 @@ class CommandCompleter(Completer):
         # Only complete if the input starts with '/', and contains no spaces or newlines.
         # This is because commands are expected to be the sole input in the buffer.
         if text.startswith("/") and " " not in text and "\n" not in text:
+            completed_count = 0
             for command in COMMANDS:
                 if command.startswith(text):
-                    yield Completion(
-                        command,
-                        start_position=-len(text),
-                    )
+                    if completed_count < 5:
+                        yield Completion(
+                            command,
+                            start_position=-len(text),
+                        )
+                        completed_count += 1
+                    else:
+                        break  # Stop yielding after 5
 
 
 def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    agent_mode = "code"
+    messages = [{"role": "system", "content": SYSTEM_PROMPTS[agent_mode]}]
     read_files_in_session = set()
     history = InMemoryHistory()
     yolo_mode = False
@@ -231,7 +278,7 @@ def start_interactive_session(initial_prompt, cfg):
         console.print(Panel(initial_prompt, title="[bold blue]User[/]", border_style="blue"))
         messages.append({"role": "user", "content": initial_prompt})
         try:
-            process_llm_turn(messages, read_files_in_session, cfg, yolo_mode=yolo_mode)
+            process_llm_turn(messages, read_files_in_session, cfg, agent_mode, yolo_mode=yolo_mode)
         except Exception as e:
             console.print(f"[bold red]An error occurred:[/] {e}")
             messages.pop()
@@ -318,6 +365,17 @@ def start_interactive_session(initial_prompt, cfg):
                 if yolo_mode:
                     console.print("[yellow]Warning: Dangerous commands will execute without confirmation.[/yellow]")
                 continue
+            elif user_input.lower().startswith("/mode"):
+                parts = user_input.strip().lower().split()
+                if len(parts) == 2 and parts[1] in MODES:
+                    agent_mode = parts[1]
+                    messages[0] = {"role": "system", "content": SYSTEM_PROMPTS[agent_mode]}
+                    console.print(f"Switched to [bold green]{agent_mode.capitalize()}[/bold green] mode.")
+                elif len(parts) == 1 and parts[0] == "/mode":
+                    console.print(f"Current mode: {agent_mode}. Available modes: {', '.join(MODES)}. Usage: /mode <mode_name>")
+                else:
+                    console.print(f"[red]Invalid mode or usage. Available modes: {', '.join(MODES)}[/red]")
+                continue
             elif user_input.lower() in ["/exit", "exit"]:
                 break
             elif user_input.lower() == "/config":
@@ -333,7 +391,7 @@ def start_interactive_session(initial_prompt, cfg):
             
             messages.append({"role": "user", "content": user_input})
             try:
-                process_llm_turn(messages, read_files_in_session, cfg, yolo_mode=yolo_mode)
+                process_llm_turn(messages, read_files_in_session, cfg, agent_mode, yolo_mode=yolo_mode)
             except Exception as e:
                 console.print(f"[bold red]An error occurred:[/] {e}")
                 messages.pop()
