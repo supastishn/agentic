@@ -29,6 +29,12 @@ from . import config
 
 console = Console()
 
+class SubAgentEndTask(Exception):
+    def __init__(self, reason: str, info: str = ""):
+        self.reason = reason
+        self.info = info or "" # Ensure info is a string
+        super().__init__(f"Sub-agent ended task with reason: {reason}")
+
 CODE_SYSTEM_PROMPT = (
     "You are an AI assistant expert in software development. You have access to a powerful set of tools.\n"
     "Your primary directive is to ALWAYS understand the project context before providing code or solutions.\n\n"
@@ -37,13 +43,15 @@ CODE_SYSTEM_PROMPT = (
     "2. **Think & Plan:** Use the `Think` tool to break down the problem, formulate a hypothesis, and create a step-by-step plan. This is a crucial step for complex tasks.\n"
     "3. **Ask for Feedback (if needed):** If the plan is complex or you are unsure about the best approach, use the `UserInput` tool to ask for clarification or confirmation before proceeding.\n"
     "4. **Analyze & Execute:** Based on your plan, use `SearchText`, `Edit`, `WriteFile`, or `Shell` to execute the steps. Use `SaveMemory` to remember key findings.\n"
-    "5. **Consult Web:** Use `WebFetch` if you need external information.\n\n"
+    "5. **Consult Web:** Use `WebFetch` if you need external information.\n"
+    "6. **Finish:** Once the task is complete, call `EndTask` with a `reason` of 'success' and `info` summarizing your work. If you cannot complete the task, call `EndTask` with 'failure' and explain why.\n\n"
     "**Tool Guidelines:**\n"
     "- `Think`: Use this to externalize your thought process. It helps you structure your plan and analyze information before taking action.\n"
     "- `UserInput`: Use this to ask for feedback, clarification, or the next feature to implement. Essential for interactive development.\n"
     "- `WriteFile`: Creates a new file or completely overwrites an existing one. Use with caution.\n"
     "- `Edit`: Performs a targeted search-and-replace. This is safer for small changes.\n"
-    "- `Shell`: Executes shell commands. Powerful but dangerous. Use it only when necessary.\n\n"
+    "- `Shell`: Executes shell commands. Powerful but dangerous. Use it only when necessary.\n"
+    "- `EndTask`: You MUST call this tool to signal you have finished your task. Provide a clear reason ('success' or 'failure') and a summary of your work in the 'info' field.\n\n"
     "Always use relative paths. Be methodical. Think step by step."
 )
 
@@ -66,10 +74,12 @@ ARCHITECT_SYSTEM_PROMPT = (
     "1. **Gather Context:** Use `ReadFolder` and `ReadFile` to understand the existing project structure and code.\n"
     "2. **Deconstruct the Request:** Use the `Think` tool to break down the user's request into architectural components and requirements.\n"
     "3. **Design the Plan:** Formulate a detailed, step-by-step plan. Describe new files to be created, changes to existing files, and the overall structure. Do not write the code for these changes.\n"
-    "4. **Seek Clarification:** Use `UserInput` if the requirements are ambiguous or to get feedback on your proposed plan.\n\n"
+    "4. **Seek Clarification:** Use `UserInput` if the requirements are ambiguous or to get feedback on your proposed plan.\n"
+    "5. **Finish:** When your plan is complete, call the `EndTask` tool. Set `reason` to 'success' and put your complete, final plan into the `info` parameter.\n\n"
     "**Tool Guidelines:**\n"
     "- Your primary tool is `Think` to outline your architectural plan.\n"
     "- You can read files, but you cannot write or edit them. You cannot use `Shell`.\n"
+    "- `EndTask`: You MUST use this tool to submit your final plan. Put the complete plan in the 'info' parameter.\n"
     "- Your final output should be a plan, not executable code."
 )
 
@@ -82,7 +92,7 @@ AGENT_MAKER_SYSTEM_PROMPT = (
     "3. **Synthesize:** Combine the results from the sub-agents to fulfill the original request.\n"
     "4. **Consult:** Use `ReadFolder`, `ReadFile`, and `WebFetch` to gather any information needed to create effective prompts for your sub-agents.\n\n"
     "**Tool Guidelines:**\n"
-    "- `make_subagent`: Your primary tool for creating other agents.\n"
+    "- `make_subagent`: Your primary tool for creating other agents. The tool returns a JSON string with 'reason' and 'info' fields. You must check the 'reason' to see if the sub-agent succeeded. If it failed, you may need to debug or create a new sub-agent with a corrected prompt.\n"
     "- You do not write code or perform edits directly. You delegate these tasks.\n"
     "- Forbidden sub-agent modes: 'ask', 'agent-maker'."
 )
@@ -114,7 +124,7 @@ def is_config_valid(cfg):
 def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
     """
     Runs a non-interactive sub-agent for a specific task.
-    Returns the final textual output from the sub-agent.
+    Returns a JSON string with the result from the sub-agent.
     """
     console.print(Panel(f"Starting sub-agent in '{mode}' mode...\nPrompt: {prompt}", title="[bold blue]Sub-agent Invoked[/]", border_style="blue"))
 
@@ -131,12 +141,24 @@ def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
     ]
     sub_read_files = set()
 
-    # Run the agent loop until it completes (returns text, not more tool calls)
-    # Note: YOLO mode is always false for sub-agents to prevent mishaps.
-    final_message = process_llm_turn(sub_messages, sub_read_files, cfg, mode, yolo_mode=False, is_sub_agent=True)
+    try:
+        # Run the agent loop. It will end by either returning a message (error)
+        # or raising SubAgentEndTask (success/failure).
+        final_message = process_llm_turn(sub_messages, sub_read_files, cfg, mode, yolo_mode=False, is_sub_agent=True)
+        
+        if final_message:
+            output_content = final_message.get("content", "Sub-agent did not return any output.")
+            info = f"Last Message of Subagent: {output_content}\nA sub-agent must end its task by calling the 'EndTask' tool. It should not return a final text response. You should make a new agent to try again."
+            output = json.dumps({"reason": "Model Error", "info": info})
+        else:
+            # This happens if mode is not configured, process_llm_turn returns None
+            info = f"Sub-agent failed to start. The '{mode}' mode might not be configured correctly."
+            output = json.dumps({"reason": "Configuration Error", "info": info})
+
+    except SubAgentEndTask as e:
+        output = json.dumps({"reason": e.reason, "info": e.info})
     
-    output = final_message.get("content", "Sub-agent did not return any output.")
-    console.print(Panel(output, title="[bold blue]Sub-agent Finished[/]", border_style="blue"))
+    console.print(Panel(json.dumps(json.loads(output), indent=2), title="[bold blue]Sub-agent Finished[/]", border_style="blue"))
     return output
 
 
@@ -166,6 +188,8 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
     # Sub-agents have additional restrictions
     if is_sub_agent:
         disallowed_tools.update({"UserInput", "MakeSubagent"})
+    else: # Non-sub-agents cannot end the task
+        disallowed_tools.add("EndTask")
     
     # All modes except agent-maker cannot create sub-agents.
     if agent_mode != "agent-maker":
@@ -209,6 +233,14 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             for tool_call in tool_calls:
                 tool_name = tool_call.function.name
                 tool_args = json.loads(tool_call.function.arguments)
+
+                # SPECIAL HANDLING for EndTask - this will terminate the sub-agent
+                if tool_name == "EndTask":
+                    raise SubAgentEndTask(
+                        reason=tool_args.get("reason"),
+                        info=tool_args.get("info", "")
+                    )
+
                 tool_panel_content = f"[cyan]{tool_name}[/][default]({json.dumps(tool_args, indent=2)})[/]"
                 console.print(
                     Panel(

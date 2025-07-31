@@ -185,6 +185,15 @@ def save_memory(text: str, scope: str = "project") -> str:
     except Exception as e:
         return f"Error saving memory: {e}"
 
+def end_task(reason: str, info: str = "") -> str:
+    """
+    Signals that the sub-agent has completed its task, providing a reason and optional information.
+    This is a placeholder; the actual implementation is in the `cli` module.
+    This must be the final tool call from a sub-agent.
+    """
+    # This function is a placeholder. The actual logic is handled specially in `cli.py`.
+    return "Sub-agent task completion is handled by the main application loop."
+
 def make_subagent(mode: str, prompt: str) -> str:
     """
     Creates and runs a sub-agent with a specific mode and prompt to accomplish a task.
@@ -198,6 +207,7 @@ def make_subagent(mode: str, prompt: str) -> str:
 
 AVAILABLE_TOOLS = {
     "Edit": edit,
+    "EndTask": end_task,
     "FindFiles": find_files,
     "MakeSubagent": make_subagent,
     "ReadFile": read_file,
@@ -220,6 +230,7 @@ TOOLS_METADATA = [
     {"type": "function", "function": {"name": "SearchText", "description": "Searches for a text query within a single file and returns matching lines.", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "The text to search for."}, "file_path": {"type": "string", "description": "The path of the file to search in."}}, "required": ["query", "file_path"]}}},
     {"type": "function", "function": {"name": "WriteFile", "description": "Writes content to a file, creating it if it doesn't exist or overwriting it completely if it does.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file."}, "content": {"type": "string", "description": "The full content to write to the file."}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "Edit", "description": "Performs a targeted search-and-replace on a file. Safer than WriteFile for small changes. Fails if the search string is not found.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file to edit."}, "search": {"type": "string", "description": "The exact text to find in the file."}, "replace": {"type": "string", "description": "The text to replace the 'search' text with."}}, "required": ["path", "search", "replace"]}}},
+    {"type": "function", "function": {"name": "EndTask", "description": "Signals the end of the sub-agent's task with a reason and optional info. This MUST be the final tool call made by a sub-agent.", "parameters": {"type": "object", "properties": {"reason": {"type": "string", "description": "The reason for ending the task (e.g., 'success', 'failure', 'partial_success')."}, "info": {"type": "string", "description": "Optional detailed information about what was accomplished or what failed."}}, "required": ["reason"]}}},
     {"type": "function", "function": {"name": "MakeSubagent", "description": "Creates and runs a sub-agent to perform a specific task. The sub-agent runs non-interactively and returns its final text output. Use this to delegate complex work. Forbidden modes: 'ask', 'agent-maker'.", "parameters": {"type": "object", "properties": {"mode": {"type": "string", "enum": ["code", "architect"], "description": "The mode for the sub-agent to run in."}, "prompt": {"type": "string", "description": "The specific and detailed prompt for the sub-agent's task."}}, "required": ["mode", "prompt"]}}},
     {"type": "function", "function": {"name": "Shell", "description": "Executes a shell command and returns the output. Use with caution.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "The command to execute."}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "Think", "description": "Processes a thought by thinking about it deeply, considering related info, code, etc. This helps in breaking down complex problems and forming a plan.", "parameters": {"type": "object", "properties": {"thought": {"type": "string", "description": "The thought to think about deeply. Think about related info, code, etc."}}, "required": ["thought"]}}},
