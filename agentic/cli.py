@@ -350,8 +350,7 @@ def load_memories() -> str:
 
     return "\n\n".join(memory_parts)
 
-
-MODES = ["code", "ask", "architect"]
+MODES = ["code", "ask", "architect", "agent-maker"]
 COMMANDS = ["/help", "/config", "/yolo", "/exit", "/mode"]
 
 class CommandCompleter(Completer):
