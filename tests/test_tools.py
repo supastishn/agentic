@@ -2,8 +2,25 @@ import pytest
 from unittest.mock import Mock
 from agentic import tools
 
-def test_save_memory():
-    assert tools.save_memory("info") == "OK, I will remember this: 'info'"
+def test_save_memory(mocker):
+    # Mock os.getcwd to have a predictable project name
+    mocker.patch("os.getcwd", return_value="/path/to/my_project")
+    # Mock the config helpers
+    mocker.patch("agentic.config._ensure_data_dir")
+    mocker.patch("pathlib.Path.open", mocker.mock_open())
+    mocker.patch.object(tools.config, 'DATA_DIR', tools.Path('/fake/data/dir'))
+    
+    # Test project scope (default)
+    result_project = tools.save_memory("info")
+    assert result_project == "OK, I will remember this for future 'project' sessions."
+    tools.config.DATA_DIR.joinpath("my_project.md").open.assert_called_once_with("a", encoding="utf-8")
+    
+    tools.config.DATA_DIR.joinpath("my_project.md").open.reset_mock()
+    
+    # Test global scope
+    result_global = tools.save_memory("global info", scope="global")
+    assert result_global == "OK, I will remember this for future 'global' sessions."
+    tools.config.DATA_DIR.joinpath("memorys.global.md").open.assert_called_once_with("a", encoding="utf-8")
 
 def test_think():
     assert tools.think("a thought") == "Thought successfully processed!"

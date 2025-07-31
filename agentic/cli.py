@@ -80,22 +80,20 @@ SYSTEM_PROMPTS = {
 }
 
 def is_config_valid(cfg):
-    """Checks if the provided configuration is valid, supporting per-mode config."""
-    # New config: per-mode
-    if "modes" in cfg and "active_mode" in cfg:
-        active_mode = cfg.get("active_mode")
-        mode_config = cfg.get("modes", {}).get(active_mode, {})
-        active_provider = mode_config.get("active_provider")
-        if active_provider:
-            p_config = mode_config.get("providers", {}).get(active_provider, {})
-            return "api_key" in p_config and "model" in p_config
+    """Checks if at least one mode in the config is validly configured."""
+    if "modes" not in cfg:
         return False
-    # Old config: just check for api_key, model might have a default
-    active_provider = cfg.get("active_provider")
-    if active_provider:
-        p_config = cfg.get("providers", {}).get(active_provider, {})
-        return "api_key" in p_config and "model" in p_config
-    return "api_key" in cfg
+    
+    for mode_name, mode_config in cfg.get("modes", {}).items():
+        active_provider = mode_config.get("active_provider")
+        if not active_provider:
+            continue
+        
+        provider_config = mode_config.get("providers", {}).get(active_provider, {})
+        if provider_config.get("api_key") and provider_config.get("model"):
+            return True  # Found at least one validly configured mode
+            
+    return False
 
 
 def _should_add_to_history(text: str):
@@ -119,30 +117,22 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             t for t in tools.TOOLS_METADATA if t["function"]["name"] not in disallowed_tools
         ]
 
-    # New config: per-mode
-    if "modes" in cfg and "active_mode" in cfg:
-        active_mode = cfg.get("active_mode")
-        mode_config = cfg.get("modes", {}).get(active_mode, {})
-        active_provider = mode_config.get("active_provider")
-        if active_provider:
-            provider_config = mode_config.get("providers", {}).get(active_provider, {})
-            model_name = provider_config.get("model")
-            api_key = provider_config.get("api_key")
-            model = f"{active_provider}/{model_name}" if model_name else None
-        else:
-            model = None
-            api_key = None
-    else:
-        # Backwards compatibility for old config format
-        active_provider = cfg.get("active_provider")
-        if active_provider:
-            provider_config = cfg.get("providers", {}).get(active_provider, {})
-            model_name = provider_config.get("model")
-            api_key = provider_config.get("api_key")
-            model = f"{active_provider}/{model_name}" if model_name else None
-        else:
-            model = cfg.get("model", "gpt-4o") # Default model for old configs
-            api_key = cfg.get("api_key")
+    # Get model and API key for the current agent_mode
+    mode_config = cfg.get("modes", {}).get(agent_mode, {})
+    active_provider = mode_config.get("active_provider")
+    model, api_key = None, None
+
+    if active_provider:
+        provider_config = mode_config.get("providers", {}).get(active_provider, {})
+        model_name = provider_config.get("model")
+        api_key = provider_config.get("api_key")
+        if model_name:
+            model = f"{active_provider}/{model_name}"
+
+    if not model or not api_key:
+        console.print(f"[bold red]Error:[/] Agent mode '{agent_mode}' is not configured.")
+        console.print("Please use `/config` to set the provider, model, and API key for this mode.")
+        return # Stop processing and return to the user prompt
 
     while True:
         response = litellm.completion(

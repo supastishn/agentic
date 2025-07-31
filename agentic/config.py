@@ -134,31 +134,22 @@ def save_config(config: dict):
     
     CONFIG_FILE.write_bytes(encrypted_data)
 
-def prompt_for_config() -> dict:
-    """Interactively prompts the user for configuration settings using a menu, now supporting per-mode model selection."""
+def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: dict, all_providers: list):
+    """Interactively prompts for a single mode's configuration."""
     console = Console()
-    original_config = load_config()
-    # Use a deep copy to allow for discarding changes
-    config_to_edit = json.loads(json.dumps(original_config))
-
-    provider_models = _get_provider_models()
-    all_providers = sorted(list(provider_models.keys()))
-    all_modes = ["code", "ask", "architect"]
-
-    # Set up new config structure if not present
-    config_to_edit.setdefault("modes", {})
-    active_mode = config_to_edit.get("active_mode", all_modes[0])
+    
+    # Work on a specific slice of the config
+    mode_cfg = config_to_edit["modes"].setdefault(mode_name, {})
+    # Keep a backup to revert if user cancels
+    original_mode_cfg = json.loads(json.dumps(mode_cfg))
 
     while True:
         console.clear()
 
-        # Get current values for display
-        active_mode = config_to_edit.get("active_mode", all_modes[0])
-        mode_config = config_to_edit["modes"].setdefault(active_mode, {})
-        active_provider = mode_config.get("active_provider")
+        active_provider = mode_cfg.get("active_provider")
         provider_config = {}
         if active_provider:
-            providers = mode_config.setdefault("providers", {})
+            providers = mode_cfg.setdefault("providers", {})
             provider_config = providers.setdefault(active_provider, {})
 
         model = provider_config.get("model", "Not set")
@@ -166,131 +157,141 @@ def prompt_for_config() -> dict:
         api_key_display = f"****{api_key[-4:]}" if api_key else "Not set"
 
         config_view_content = (
-            f"[bold cyan]Active Mode:[/bold cyan] {active_mode}\n"
-            f"[bold cyan]Active Provider:[/bold cyan] {active_provider or 'Not set'}\n"
+            f"[bold cyan]Provider:[/bold cyan] {active_provider or 'Not set'}\n"
             f"[bold cyan]Model:[/bold cyan] {model}\n"
             f"[bold cyan]API Key:[/bold cyan] {api_key_display}"
         )
-        console.print(Panel(config_view_content, title="[bold green]Current Configuration[/]", expand=False))
+        console.print(Panel(config_view_content, title=f"[bold green]Configuring '{mode_name}' Mode[/]", expand=False))
 
         menu_items = [
-            "1. Select Mode",
-            "2. Select Provider",
-            "3. Edit Model",
-            "4. Edit API Key",
-            None,  # Use None for a separator
-            "5. Save and Exit",
-            "6. Exit without Saving",
+            "1. Select Provider",
+            "2. Edit Model",
+            "3. Edit API Key",
+            None,
+            "4. Back (Save Changes for this mode)",
+            "5. Back (Discard Changes for this mode)",
         ]
-
         terminal_menu = TerminalMenu(
             menu_items,
-            title="Use UP/DOWN keys to navigate, ENTER to select. (ESC to discard)",
+            title="Use UP/DOWN keys to navigate, ENTER to select.",
             menu_cursor="> ",
             menu_cursor_style=("fg_green", "bold"),
             menu_highlight_style=("bg_green", "fg_black"),
-            cycle_cursor=True,
-            clear_screen=False,  # We handle clearing
         )
-
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 5:  # Exit without Saving or ESC
-            console.print("\n[yellow]Configuration changes discarded.[/yellow]")
-            return original_config
+        if selected_index is None or selected_index == 5:  # Discard and Back
+            config_to_edit["modes"][mode_name] = original_mode_cfg
+            break
 
-        if selected_index == 0:  # Select Mode
-            mode_menu = TerminalMenu(all_modes, title="Select a mode")
-            selected_mode_index = mode_menu.show()
-            if selected_mode_index is not None:
-                config_to_edit["active_mode"] = all_modes[selected_mode_index]
-                # Ensure mode config exists
-                config_to_edit["modes"].setdefault(all_modes[selected_mode_index], {})
-            continue
-
-        elif selected_index == 1:  # Select Provider
+        if selected_index == 0:  # Select Provider
             if not all_providers:
-                console.print("\n[yellow]Could not dynamically determine providers.[/yellow]")
+                console.print("\n[yellow]Could not determine providers.[/yellow]")
                 console.input("Press Enter to continue...")
                 continue
-
             provider_menu = TerminalMenu(all_providers, title="Select a provider")
-            selected_provider_index = provider_menu.show()
-            if selected_provider_index is not None:
-                mode_config["active_provider"] = all_providers[selected_provider_index]
-                # Ensure provider config exists
-                mode_config.setdefault("providers", {}).setdefault(all_providers[selected_provider_index], {})
+            sel_provider_idx = provider_menu.show()
+            if sel_provider_idx is not None:
+                mode_cfg["active_provider"] = all_providers[sel_provider_idx]
+                mode_cfg.setdefault("providers", {}).setdefault(all_providers[sel_provider_idx], {})
             continue
 
-        elif selected_index == 2:  # Edit Model
-            active_provider = mode_config.get("active_provider")
+        elif selected_index == 1:  # Edit Model
+            active_provider = mode_cfg.get("active_provider")
             if not active_provider:
                 console.print("\n[yellow]Please select a provider first.[/yellow]")
                 console.input("Press Enter to continue...")
                 continue
-
             models = provider_models.get(active_provider, [])
             if not models:
-                console.print(
-                    f"\n[yellow]No models found for '{active_provider}'. You can enter one manually.[/yellow]"
-                )
-                new_model = console.input(
-                    f"Enter model for {active_provider}: "
-                ).strip()
+                console.print(f"\n[yellow]No models found for '{active_provider}'. Enter one manually.[/yellow]")
+                new_model = console.input(f"Enter model for {active_provider}: ").strip()
             else:
-                model_menu = TerminalMenu(
-                    models, title=f"Select a model for {active_provider}"
-                )
-                selected_model_index = model_menu.show()
-                new_model = (
-                    models[selected_model_index]
-                    if selected_model_index is not None
-                    else None
-                )
-
+                model_menu = TerminalMenu(models, title=f"Select a model for {active_provider}")
+                sel_model_idx = model_menu.show()
+                new_model = models[sel_model_idx] if sel_model_idx is not None else None
+            
             if new_model:
-                providers = mode_config.setdefault("providers", {})
-                provider_cfg = providers.setdefault(active_provider, {})
-                provider_cfg["model"] = new_model
+                mode_cfg["providers"].setdefault(active_provider, {})["model"] = new_model
             continue
 
-        elif selected_index == 3:  # Edit API Key
-            active_provider = mode_config.get("active_provider")
+        elif selected_index == 2:  # Edit API Key
+            active_provider = mode_cfg.get("active_provider")
             if not active_provider:
                 console.print("\n[yellow]Please select a provider first.[/yellow]")
                 console.input("Press Enter to continue...")
                 continue
-
-            new_api_key = console.input(
-                f"Enter new API Key for {active_provider}: "
-            ).strip()
+            new_api_key = console.input(f"Enter new API Key for {active_provider}: ").strip()
             if new_api_key:
-                providers = mode_config.setdefault("providers", {})
-                provider_cfg = providers.setdefault(active_provider, {})
-                provider_cfg["api_key"] = new_api_key
+                mode_cfg["providers"].setdefault(active_provider, {})["api_key"] = new_api_key
             continue
 
-        elif selected_index == 4:  # Save and Exit
-            active_mode = config_to_edit.get("active_mode", all_modes[0])
-            mode_config = config_to_edit["modes"].get(active_mode, {})
-            active_provider = mode_config.get("active_provider")
+        elif selected_index == 3 or selected_index == 4:  # Save and Back
+            active_provider = mode_cfg.get("active_provider")
             if not active_provider:
-                console.print(
-                    "\n[bold red]An active provider must be selected. Configuration not saved.[/bold red]"
-                )
+                console.print("\n[bold red]Provider must be selected. Changes not saved.[/bold red]")
                 console.input("Press Enter to continue...")
                 continue
-
-            provider_config = mode_config.get("providers", {}).get(
-                active_provider, {}
-            )
-            if not provider_config.get("model") or not provider_config.get("api_key"):
-                console.print(
-                    f"[bold red]Model and API Key are required for provider '{active_provider}'. Configuration not saved.[/bold red]"
-                )
+            
+            provider_cfg = mode_cfg.get("providers", {}).get(active_provider, {})
+            if not provider_cfg.get("model") or not provider_cfg.get("api_key"):
+                console.print(f"[bold red]Model and API Key required for '{active_provider}'. Changes not saved.[/bold red]")
                 console.input("Press Enter to continue...")
                 continue
+            
+            # Changes are already in config_to_edit, so we just break
+            break
 
+
+def prompt_for_config() -> dict:
+    """Interactively prompts the user to select a mode and then configure it."""
+    console = Console()
+    original_config = load_config()
+    config_to_edit = json.loads(json.dumps(original_config)) # Deep copy
+
+    provider_models = _get_provider_models()
+    all_providers = sorted(list(provider_models.keys()))
+    all_modes = ["code", "ask", "architect"]
+    config_to_edit.setdefault("modes", {})
+
+    while True:
+        console.clear()
+        console.print(Panel("Select a mode to configure, or save/exit.", title="[bold green]Configuration Menu[/]", expand=False))
+
+        menu_items = []
+        for mode_name in all_modes:
+            mode_config = config_to_edit["modes"].get(mode_name, {})
+            provider = mode_config.get("active_provider")
+            model = ""
+            if provider:
+                model = mode_config.get("providers", {}).get(provider, {}).get("model", "")
+            
+            display_model = f"{provider}/{model}" if provider and model else "Not Configured"
+            menu_items.append(f"{mode_name.capitalize():<10} ({display_model})")
+        
+        menu_items.extend([None, "Save and Exit", "Exit without Saving"])
+        
+        terminal_menu = TerminalMenu(
+            menu_items,
+            title="Use UP/DOWN keys to navigate, ENTER to select.",
+            menu_cursor="> ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_green", "fg_black"),
+        )
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == len(all_modes) + 2: # "Exit without Saving" or ESC
+            console.print("\n[yellow]Configuration changes discarded.[/yellow]")
+            return original_config
+        
+        if selected_index == len(all_modes) + 1: # "Save and Exit"
+            # Remove the now-obsolete top-level active_mode key if it exists
+            config_to_edit.pop("active_mode", None)
             save_config(config_to_edit)
             console.print("\n[bold green]✔ Configuration saved successfully.[/bold green]")
             return config_to_edit
+        
+        if selected_index is not None and selected_index < len(all_modes):
+            selected_mode = all_modes[selected_index]
+            _prompt_for_one_mode(config_to_edit, selected_mode, provider_models, all_providers)
+            # The loop will now continue, re-rendering the main menu
