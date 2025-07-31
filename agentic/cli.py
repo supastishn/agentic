@@ -80,13 +80,21 @@ SYSTEM_PROMPTS = {
 }
 
 def is_config_valid(cfg):
-    """Checks if the provided configuration is valid."""
+    """Checks if the provided configuration is valid, supporting per-mode config."""
+    # New config: per-mode
+    if "modes" in cfg and "active_mode" in cfg:
+        active_mode = cfg.get("active_mode")
+        mode_config = cfg.get("modes", {}).get(active_mode, {})
+        active_provider = mode_config.get("active_provider")
+        if active_provider:
+            p_config = mode_config.get("providers", {}).get(active_provider, {})
+            return "api_key" in p_config and "model" in p_config
+        return False
+    # Old config: just check for api_key, model might have a default
     active_provider = cfg.get("active_provider")
     if active_provider:
-        # New config: check for model and key for the active provider
         p_config = cfg.get("providers", {}).get(active_provider, {})
         return "api_key" in p_config and "model" in p_config
-    # Old config: just check for api_key, model might have a default
     return "api_key" in cfg
 
 
@@ -111,18 +119,30 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             t for t in tools.TOOLS_METADATA if t["function"]["name"] not in disallowed_tools
         ]
 
-    active_provider = cfg.get("active_provider")
-    if active_provider:
-        # New provider-based config
-        provider_config = cfg.get("providers", {}).get(active_provider, {})
-        model_name = provider_config.get("model")
-        api_key = provider_config.get("api_key")
-        # Litellm requires the model in provider/model_name format
-        model = f"{active_provider}/{model_name}" if model_name else None
+    # New config: per-mode
+    if "modes" in cfg and "active_mode" in cfg:
+        active_mode = cfg.get("active_mode")
+        mode_config = cfg.get("modes", {}).get(active_mode, {})
+        active_provider = mode_config.get("active_provider")
+        if active_provider:
+            provider_config = mode_config.get("providers", {}).get(active_provider, {})
+            model_name = provider_config.get("model")
+            api_key = provider_config.get("api_key")
+            model = f"{active_provider}/{model_name}" if model_name else None
+        else:
+            model = None
+            api_key = None
     else:
         # Backwards compatibility for old config format
-        model = cfg.get("model", "gpt-4o") # Default model for old configs
-        api_key = cfg.get("api_key")
+        active_provider = cfg.get("active_provider")
+        if active_provider:
+            provider_config = cfg.get("providers", {}).get(active_provider, {})
+            model_name = provider_config.get("model")
+            api_key = provider_config.get("api_key")
+            model = f"{active_provider}/{model_name}" if model_name else None
+        else:
+            model = cfg.get("model", "gpt-4o") # Default model for old configs
+            api_key = cfg.get("api_key")
 
     while True:
         response = litellm.completion(

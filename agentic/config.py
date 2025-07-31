@@ -135,7 +135,7 @@ def save_config(config: dict):
     CONFIG_FILE.write_bytes(encrypted_data)
 
 def prompt_for_config() -> dict:
-    """Interactively prompts the user for configuration settings using a menu."""
+    """Interactively prompts the user for configuration settings using a menu, now supporting per-mode model selection."""
     console = Console()
     original_config = load_config()
     # Use a deep copy to allow for discarding changes
@@ -143,15 +143,22 @@ def prompt_for_config() -> dict:
 
     provider_models = _get_provider_models()
     all_providers = sorted(list(provider_models.keys()))
+    all_modes = ["code", "ask", "architect"]
+
+    # Set up new config structure if not present
+    config_to_edit.setdefault("modes", {})
+    active_mode = config_to_edit.get("active_mode", all_modes[0])
 
     while True:
         console.clear()
 
         # Get current values for display
-        active_provider = config_to_edit.get("active_provider")
+        active_mode = config_to_edit.get("active_mode", all_modes[0])
+        mode_config = config_to_edit["modes"].setdefault(active_mode, {})
+        active_provider = mode_config.get("active_provider")
         provider_config = {}
         if active_provider:
-            providers = config_to_edit.setdefault("providers", {})
+            providers = mode_config.setdefault("providers", {})
             provider_config = providers.setdefault(active_provider, {})
 
         model = provider_config.get("model", "Not set")
@@ -159,6 +166,7 @@ def prompt_for_config() -> dict:
         api_key_display = f"****{api_key[-4:]}" if api_key else "Not set"
 
         config_view_content = (
+            f"[bold cyan]Active Mode:[/bold cyan] {active_mode}\n"
             f"[bold cyan]Active Provider:[/bold cyan] {active_provider or 'Not set'}\n"
             f"[bold cyan]Model:[/bold cyan] {model}\n"
             f"[bold cyan]API Key:[/bold cyan] {api_key_display}"
@@ -166,12 +174,13 @@ def prompt_for_config() -> dict:
         console.print(Panel(config_view_content, title="[bold green]Current Configuration[/]", expand=False))
 
         menu_items = [
-            "1. Select Provider",
-            "2. Edit Model",
-            "3. Edit API Key",
+            "1. Select Mode",
+            "2. Select Provider",
+            "3. Edit Model",
+            "4. Edit API Key",
             None,  # Use None for a separator
-            "4. Save and Exit",
-            "5. Exit without Saving",
+            "5. Save and Exit",
+            "6. Exit without Saving",
         ]
 
         terminal_menu = TerminalMenu(
@@ -186,11 +195,20 @@ def prompt_for_config() -> dict:
 
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 4:  # Exit without Saving or ESC
+        if selected_index is None or selected_index == 5:  # Exit without Saving or ESC
             console.print("\n[yellow]Configuration changes discarded.[/yellow]")
             return original_config
 
-        if selected_index == 0:  # Select Provider
+        if selected_index == 0:  # Select Mode
+            mode_menu = TerminalMenu(all_modes, title="Select a mode")
+            selected_mode_index = mode_menu.show()
+            if selected_mode_index is not None:
+                config_to_edit["active_mode"] = all_modes[selected_mode_index]
+                # Ensure mode config exists
+                config_to_edit["modes"].setdefault(all_modes[selected_mode_index], {})
+            continue
+
+        elif selected_index == 1:  # Select Provider
             if not all_providers:
                 console.print("\n[yellow]Could not dynamically determine providers.[/yellow]")
                 console.input("Press Enter to continue...")
@@ -199,12 +217,13 @@ def prompt_for_config() -> dict:
             provider_menu = TerminalMenu(all_providers, title="Select a provider")
             selected_provider_index = provider_menu.show()
             if selected_provider_index is not None:
-                config_to_edit["active_provider"] = all_providers[
-                    selected_provider_index
-                ]
+                mode_config["active_provider"] = all_providers[selected_provider_index]
+                # Ensure provider config exists
+                mode_config.setdefault("providers", {}).setdefault(all_providers[selected_provider_index], {})
+            continue
 
-        elif selected_index == 1:  # Edit Model
-            active_provider = config_to_edit.get("active_provider")
+        elif selected_index == 2:  # Edit Model
+            active_provider = mode_config.get("active_provider")
             if not active_provider:
                 console.print("\n[yellow]Please select a provider first.[/yellow]")
                 console.input("Press Enter to continue...")
@@ -230,12 +249,13 @@ def prompt_for_config() -> dict:
                 )
 
             if new_model:
-                providers = config_to_edit.setdefault("providers", {})
+                providers = mode_config.setdefault("providers", {})
                 provider_cfg = providers.setdefault(active_provider, {})
                 provider_cfg["model"] = new_model
+            continue
 
-        elif selected_index == 2:  # Edit API Key
-            active_provider = config_to_edit.get("active_provider")
+        elif selected_index == 3:  # Edit API Key
+            active_provider = mode_config.get("active_provider")
             if not active_provider:
                 console.print("\n[yellow]Please select a provider first.[/yellow]")
                 console.input("Press Enter to continue...")
@@ -245,12 +265,15 @@ def prompt_for_config() -> dict:
                 f"Enter new API Key for {active_provider}: "
             ).strip()
             if new_api_key:
-                providers = config_to_edit.setdefault("providers", {})
+                providers = mode_config.setdefault("providers", {})
                 provider_cfg = providers.setdefault(active_provider, {})
                 provider_cfg["api_key"] = new_api_key
+            continue
 
-        elif selected_index == 3:  # Save and Exit
-            active_provider = config_to_edit.get("active_provider")
+        elif selected_index == 4:  # Save and Exit
+            active_mode = config_to_edit.get("active_mode", all_modes[0])
+            mode_config = config_to_edit["modes"].get(active_mode, {})
+            active_provider = mode_config.get("active_provider")
             if not active_provider:
                 console.print(
                     "\n[bold red]An active provider must be selected. Configuration not saved.[/bold red]"
@@ -258,7 +281,7 @@ def prompt_for_config() -> dict:
                 console.input("Press Enter to continue...")
                 continue
 
-            provider_config = config_to_edit.get("providers", {}).get(
+            provider_config = mode_config.get("providers", {}).get(
                 active_provider, {}
             )
             if not provider_config.get("model") or not provider_config.get("api_key"):
