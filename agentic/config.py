@@ -78,6 +78,7 @@ def _get_provider_models() -> dict:
 
 # --- Constants ---
 CONFIG_DIR = Path.home() / ".agentic-pypi"
+DATA_DIR = CONFIG_DIR / "data"
 CONFIG_FILE = CONFIG_DIR / "config.encrypted"
 KEY_FILE = CONFIG_DIR / "config.key"
 MODELS_CACHE_FILE = CONFIG_DIR / "model_cache.json"
@@ -87,6 +88,10 @@ MODELS_CACHE_FILE = CONFIG_DIR / "model_cache.json"
 def _ensure_config_dir():
     """Ensures the configuration directory exists."""
     CONFIG_DIR.mkdir(exist_ok=True)
+
+def _ensure_data_dir():
+    """Ensures the data directory for memories exists."""
+    DATA_DIR.mkdir(exist_ok=True)
 
 def _load_key() -> bytes:
     """Loads the encryption key, or generates it if it doesn't exist."""

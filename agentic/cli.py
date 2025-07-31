@@ -3,6 +3,7 @@
 import argparse
 import sys
 import json
+import os
 import litellm
 from rich.console import Console
 from rich.live import Live
@@ -239,6 +240,34 @@ def display_help():
     )
 
 
+def load_memories() -> str:
+    """Loads global and project-specific memories from the data directory."""
+    memory_parts = []
+
+    # 1. Load global memory
+    global_memory_file = config.DATA_DIR / "memorys.global.md"
+    if global_memory_file.is_file():
+        try:
+            memory_parts.append(f"### Global Memory ###\n{global_memory_file.read_text()}")
+        except Exception as e:
+            console.print(f"[bold yellow]Warning:[/] Could not load global memory file: {e}")
+
+    # 2. Load project-specific memory
+    try:
+        project_name = os.path.basename(os.getcwd())
+        project_memory_file = config.DATA_DIR / f"{project_name}.md"
+        if project_memory_file.is_file():
+            memory_parts.append(f"### Project Memory ({project_name}) ###\n{project_memory_file.read_text()}")
+    except Exception as e:
+        # This could happen if getcwd fails, though unlikely.
+        console.print(f"[bold yellow]Warning:[/] Could not determine or load project memory: {e}")
+
+    if not memory_parts:
+        return ""
+
+    return "\n\n".join(memory_parts)
+
+
 MODES = ["code", "ask", "architect"]
 COMMANDS = ["/help", "/config", "/yolo", "/exit", "/mode"]
 
@@ -268,7 +297,16 @@ class CommandCompleter(Completer):
 def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     agent_mode = "code"
-    messages = [{"role": "system", "content": SYSTEM_PROMPTS[agent_mode]}]
+
+    memories = load_memories()
+    system_prompt_template = SYSTEM_PROMPTS[agent_mode]
+    if memories:
+        system_prompt = f"### PERMANENT MEMORIES ###\n{memories}\n\n### TASK ###\n{system_prompt_template}"
+        console.print(Panel(memories, title="[bold magenta]Memories Loaded[/]", border_style="magenta", expand=False))
+    else:
+        system_prompt = system_prompt_template
+
+    messages = [{"role": "system", "content": system_prompt}]
     read_files_in_session = set()
     history = InMemoryHistory()
     yolo_mode = False
@@ -369,7 +407,9 @@ def start_interactive_session(initial_prompt, cfg):
                 parts = user_input.strip().lower().split()
                 if len(parts) == 2 and parts[1] in MODES:
                     agent_mode = parts[1]
-                    messages[0] = {"role": "system", "content": SYSTEM_PROMPTS[agent_mode]}
+                    system_prompt_template = SYSTEM_PROMPTS[agent_mode]
+                    system_prompt = f"### PERMANENT MEMORIES ###\n{memories}\n\n### TASK ###\n{system_prompt_template}" if memories else system_prompt_template
+                    messages[0] = {"role": "system", "content": system_prompt}
                     console.print(f"Switched to [bold green]{agent_mode.capitalize()}[/bold green] mode.")
                 elif len(parts) == 1 and parts[0] == "/mode":
                     console.print(f"Current mode: {agent_mode}. Available modes: {', '.join(MODES)}. Usage: /mode <mode_name>")

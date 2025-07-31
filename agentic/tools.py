@@ -7,6 +7,8 @@ import requests
 from rich.console import Console
 from rich.panel import Panel
 
+from . import config
+
 # --- Tool Implementations ---
 
 def read_file(path: str, read_files_in_session: set) -> str:
@@ -158,9 +160,30 @@ def user_input(question: str) -> str:
     )
     return console.input("[bold yellow]Your response: [/]")
 
-def save_memory(text: str) -> str:
-    """Use to remember a key piece of information by adding it to the conversation context."""
-    return f"OK, I will remember this: '{text}'"
+def save_memory(text: str, scope: str = "project") -> str:
+    """
+    Saves a key piece of information to a memory file that will be loaded at the start of future sessions.
+    Scope can be 'project' (default) or 'global'.
+    'project' scope saves to a file specific to the current project directory.
+    'global' scope saves to a file that is loaded for all projects.
+    """
+    try:
+        config._ensure_data_dir()
+
+        if scope == "project":
+            project_name = os.path.basename(os.getcwd())
+            memory_file = config.DATA_DIR / f"{project_name}.md"
+        elif scope == "global":
+            memory_file = config.DATA_DIR / "memorys.global.md"
+        else:
+            return "Error: Invalid scope. Must be 'project' or 'global'."
+
+        with memory_file.open("a", encoding="utf-8") as f:
+            f.write(f"\n\n---\n\n{text}")
+
+        return f"OK, I will remember this for future '{scope}' sessions."
+    except Exception as e:
+        return f"Error saving memory: {e}"
 
 # --- Tool Definitions for the LLM ---
 
@@ -191,5 +214,5 @@ TOOLS_METADATA = [
     {"type": "function", "function": {"name": "Think", "description": "Processes a thought by thinking about it deeply, considering related info, code, etc. This helps in breaking down complex problems and forming a plan.", "parameters": {"type": "object", "properties": {"thought": {"type": "string", "description": "The thought to think about deeply. Think about related info, code, etc."}}, "required": ["thought"]}}},
     {"type": "function", "function": {"name": "UserInput", "description": "Asks the user a question to get feedback, clarification, or the next task. Use this when you are unsure how to proceed or want to confirm a plan.", "parameters": {"type": "object", "properties": {"question": {"type": "string", "description": "The question to ask the user."}}, "required": ["question"]}}},
     {"type": "function", "function": {"name": "WebFetch", "description": "Fetches the text content from a URL.", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "The URL to fetch content from."}}, "required": ["url"]}}},
-    {"type": "function", "function": {"name": "SaveMemory", "description": "Use to remember a key piece of information. Adds the information to the conversation context.", "parameters": {"type": "object", "properties": {"text": {"type": "string", "description": "The information to remember."}}, "required": ["text"]}}},
+    {"type": "function", "function": {"name": "SaveMemory", "description": "Saves a key piece of information to a persistent memory file (project-specific or global) to be loaded in future sessions. Use 'project' scope for context relevant only to the current directory, and 'global' for universally useful information.", "parameters": {"type": "object", "properties": {"text": {"type": "string", "description": "The information to remember."}, "scope": {"type": "string", "enum": ["project", "global"], "description": "The scope of the memory, either 'project' or 'global'. Defaults to 'project'."}}, "required": ["text"]}}},
 ]
