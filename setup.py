@@ -21,4 +21,7 @@ setup(
         "rich",
         "simple-term-menu",
     ],
+    extras_require={
+        'test': ['pytest', 'pytest-mock'],
+    },
 )

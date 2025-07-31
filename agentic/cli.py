@@ -44,6 +44,17 @@ SYSTEM_PROMPT = (
     "Always use relative paths. Be methodical. Think step by step."
 )
 
+def is_config_valid(cfg):
+    """Checks if the provided configuration is valid."""
+    active_provider = cfg.get("active_provider")
+    if active_provider:
+        # New config: check for model and key for the active provider
+        p_config = cfg.get("providers", {}).get(active_provider, {})
+        return "api_key" in p_config and "model" in p_config
+    # Old config: just check for api_key, model might have a default
+    return "api_key" in cfg
+
+
 def _should_add_to_history(text: str):
     """Return True if the given input text should be added to history."""
     text = text.strip()
@@ -310,15 +321,6 @@ def start_interactive_session(initial_prompt, cfg):
 def main():
     """Main function for the agentic CLI tool."""
     cfg = config.load_config()
-
-    def is_config_valid(cfg):
-        active_provider = cfg.get("active_provider")
-        if active_provider:
-            # New config: check for model and key for the active provider
-            p_config = cfg.get("providers", {}).get(active_provider, {})
-            return "api_key" in p_config and "model" in p_config
-        # Old config: just check for api_key, model might have a default
-        return "api_key" in cfg
 
     if not is_config_valid(cfg):
         console.print("[bold yellow]Welcome to Agentic! Please configure your API key and model.[/]")
