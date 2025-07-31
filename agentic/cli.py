@@ -73,10 +73,25 @@ ARCHITECT_SYSTEM_PROMPT = (
     "- Your final output should be a plan, not executable code."
 )
 
+AGENT_MAKER_SYSTEM_PROMPT = (
+    "You are a master AI agent that can create and delegate tasks to other specialized AI agents.\n"
+    "Your purpose is to break down complex requests into sub-tasks that can be handled by other agents.\n\n"
+    "**Workflow:**\n"
+    "1. **Deconstruct Request:** Use `Think` to analyze the user's request and break it down into a sequence of tasks.\n"
+    "2. **Delegate:** For each task, use the `make_subagent` tool. Assign the correct mode ('code' or 'architect') and provide a clear, specific prompt for the sub-agent.\n"
+    "3. **Synthesize:** Combine the results from the sub-agents to fulfill the original request.\n"
+    "4. **Consult:** Use `ReadFolder`, `ReadFile`, and `WebFetch` to gather any information needed to create effective prompts for your sub-agents.\n\n"
+    "**Tool Guidelines:**\n"
+    "- `make_subagent`: Your primary tool for creating other agents.\n"
+    "- You do not write code or perform edits directly. You delegate these tasks.\n"
+    "- Forbidden sub-agent modes: 'ask', 'agent-maker'."
+)
+
 SYSTEM_PROMPTS = {
     "code": CODE_SYSTEM_PROMPT,
     "ask": ASK_SYSTEM_PROMPT,
     "architect": ARCHITECT_SYSTEM_PROMPT,
+    "agent-maker": AGENT_MAKER_SYSTEM_PROMPT,
 }
 
 def is_config_valid(cfg):
@@ -96,6 +111,35 @@ def is_config_valid(cfg):
     return False
 
 
+def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
+    """
+    Runs a non-interactive sub-agent for a specific task.
+    Returns the final textual output from the sub-agent.
+    """
+    console.print(Panel(f"Starting sub-agent in '{mode}' mode...\nPrompt: {prompt}", title="[bold blue]Sub-agent Invoked[/]", border_style="blue"))
+
+    memories = load_memories()
+    system_prompt_template = SYSTEM_PROMPTS.get(mode, CODE_SYSTEM_PROMPT)
+    if memories:
+        system_prompt = f"### PERMANENT MEMORIES ###\n{memories}\n\n### TASK ###\n{system_prompt_template}"
+    else:
+        system_prompt = system_prompt_template
+
+    sub_messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": prompt}
+    ]
+    sub_read_files = set()
+
+    # Run the agent loop until it completes (returns text, not more tool calls)
+    # Note: YOLO mode is always false for sub-agents to prevent mishaps.
+    final_message = process_llm_turn(sub_messages, sub_read_files, cfg, mode, yolo_mode=False, is_sub_agent=True)
+    
+    output = final_message.get("content", "Sub-agent did not return any output.")
+    console.print(Panel(output, title="[bold blue]Sub-agent Finished[/]", border_style="blue"))
+    return output
+
+
 def _should_add_to_history(text: str):
     """Return True if the given input text should be added to history."""
     text = text.strip()
@@ -105,17 +149,31 @@ def _should_add_to_history(text: str):
     return True
 
 
-def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo_mode: bool = False):
+def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo_mode: bool = False, is_sub_agent: bool = False):
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
     DANGEROUS_TOOLS = {"WriteFile", "Edit", "Shell"}
 
-    # Filter tools based on mode
-    available_tools_metadata = tools.TOOLS_METADATA
-    if agent_mode in ["ask", "architect"]:
-        disallowed_tools = {"WriteFile", "Edit", "Shell"}
-        available_tools_metadata = [
-            t for t in tools.TOOLS_METADATA if t["function"]["name"] not in disallowed_tools
-        ]
+    # Filter tools based on mode and if it's a sub-agent
+    disallowed_tools = set()
+    if agent_mode == "ask":
+        disallowed_tools.update({"WriteFile", "Edit", "Shell", "SaveMemory"})
+    elif agent_mode == "architect":
+        disallowed_tools.update({"WriteFile", "Edit", "Shell"})
+    elif agent_mode == "agent-maker":
+        # Agent-maker can only read, think, and make sub-agents
+        disallowed_tools.update({"WriteFile", "Edit", "Shell", "SaveMemory", "UserInput"})
+
+    # Sub-agents have additional restrictions
+    if is_sub_agent:
+        disallowed_tools.update({"UserInput", "MakeSubagent"})
+    
+    # All modes except agent-maker cannot create sub-agents.
+    if agent_mode != "agent-maker":
+        disallowed_tools.add("MakeSubagent")
+
+    available_tools_metadata = [
+        t for t in tools.TOOLS_METADATA if t["function"]["name"] not in disallowed_tools
+    ]
 
     # Get model and API key for the current agent_mode
     mode_config = cfg.get("modes", {}).get(agent_mode, {})
@@ -160,6 +218,21 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
                         expand=False,
                     )
                 )
+
+                # SPECIAL HANDLING FOR MakeSubagent
+                if tool_name == "MakeSubagent":
+                    tool_output = run_sub_agent(
+                        mode=tool_args["mode"],
+                        prompt=tool_args["prompt"],
+                        cfg=cfg
+                    )
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": tool_name,
+                        "content": str(tool_output),
+                    })
+                    continue
 
                 if tool_name in DANGEROUS_TOOLS and not yolo_mode:
                     if not Confirm.ask(
@@ -222,7 +295,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
                     )
 
         messages.append({"role": "assistant", "content": full_response})
-        break
+        return messages[-1]
 
 def display_help():
     """Displays the help menu for interactive commands."""
