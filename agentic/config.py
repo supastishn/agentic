@@ -280,7 +280,7 @@ def prompt_for_config() -> dict:
     provider_models = _get_provider_models()
     all_providers = sorted(list(provider_models.keys()))
     # Add 'global' and 'agent-maker' modes
-    all_modes = ["global", "code", "ask", "architect", "agent-maker"]
+    all_modes = ["global", "code", "ask", "architect", "agent-maker", "memory"]
     config_to_edit.setdefault("modes", {})
 
     while True:

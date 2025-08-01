@@ -42,7 +42,7 @@ CODE_SYSTEM_PROMPT = (
     "1. **Gather Context:** Start every task by using `ReadFolder` to see the project layout. Then, use `ReadFile` on the most relevant files to understand how the code works. Do not skip this step.\n"
     "2. **Think & Plan:** Use the `Think` tool to break down the problem, formulate a hypothesis, and create a step-by-step plan. This is a crucial step for complex tasks.\n"
     "3. **Ask for Feedback (if needed):** If the plan is complex or you are unsure about the best approach, use the `UserInput` tool to ask for clarification or confirmation before proceeding.\n"
-    "4. **Analyze & Execute:** Based on your plan, use `SearchText`, `Edit`, `WriteFile`, or `Shell` to execute the steps. Use `SaveMemory` to remember key findings.\n"
+    "4. **Analyze & Execute:** Based on your plan, use `SearchText`, `Edit`, `WriteFile`, or `Shell` to execute the steps.\n"
     "5. **Consult Web:** Use `WebFetch` if you need external information.\n"
     "6. **Finish:** Once the task is complete, call `EndTask` with a `reason` of 'success' and `info` summarizing your work. If you cannot complete the task, call `EndTask` with 'failure' and explain why.\n\n"
     "**Tool Guidelines:**\n"
@@ -102,6 +102,7 @@ SYSTEM_PROMPTS = {
     "ask": ASK_SYSTEM_PROMPT,
     "architect": ARCHITECT_SYSTEM_PROMPT,
     "agent-maker": AGENT_MAKER_SYSTEM_PROMPT,
+    "memory": MEMORY_SYSTEM_PROMPT,
 }
 
 def is_config_valid(cfg):
@@ -194,13 +195,16 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
 
     # Filter tools based on mode and if it's a sub-agent
     disallowed_tools = set()
-    if agent_mode == "ask":
-        disallowed_tools.update({"WriteFile", "Edit", "Shell", "SaveMemory"})
-    elif agent_mode == "architect":
+
+    # The 'memory' mode is the only one that should be able to save memories.
+    if agent_mode != "memory":
+        disallowed_tools.add("SaveMemory")
+
+    if agent_mode in ["ask", "memory", "architect"]:
         disallowed_tools.update({"WriteFile", "Edit", "Shell"})
     elif agent_mode == "agent-maker":
-        # Agent-maker can only read, think, and make sub-agents
-        disallowed_tools.update({"WriteFile", "Edit", "Shell", "SaveMemory", "UserInput"})
+        # Agent-maker can only read, think, and make sub-agents.
+        disallowed_tools.update({"WriteFile", "Edit", "Shell", "UserInput"})
 
     # Sub-agents have additional restrictions
     if is_sub_agent:
@@ -409,7 +413,7 @@ def load_memories() -> str:
 
     return "\n\n".join(memory_parts)
 
-MODES = ["code", "ask", "architect", "agent-maker"]
+MODES = ["code", "ask", "architect", "agent-maker", "memory"]
 COMMANDS = ["/help", "/config", "/yolo", "/exit", "/mode"]
 
 class CommandCompleter(Completer):
