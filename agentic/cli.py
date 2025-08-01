@@ -105,18 +105,35 @@ SYSTEM_PROMPTS = {
 }
 
 def is_config_valid(cfg):
-    """Checks if at least one mode in the config is validly configured."""
-    if "modes" not in cfg:
+    """
+    Checks if the config is valid.
+    It's valid if the 'global' mode is configured, or if at least one
+    other mode is configured. A mode is considered configured if it
+    has a provider and a model. The API key is optional.
+    """
+    modes_cfg = cfg.get("modes", {})
+    if not modes_cfg:
         return False
-    
-    for mode_name, mode_config in cfg.get("modes", {}).items():
-        active_provider = mode_config.get("active_provider")
+
+    # Helper to check if a single mode's config is valid
+    def _is_mode_section_valid(mode_section):
+        active_provider = mode_section.get("active_provider")
         if not active_provider:
+            return False
+        provider_config = mode_section.get("providers", {}).get(active_provider, {})
+        # Model is required, but API key is not.
+        return "model" in provider_config
+
+    # 1. Check if global config is valid, which makes the whole config usable
+    if "global" in modes_cfg and _is_mode_section_valid(modes_cfg["global"]):
+        return True
+
+    # 2. If global is not set, check if any other mode is validly configured
+    for mode_name, mode_config in modes_cfg.items():
+        if mode_name == "global":
             continue
-        
-        provider_config = mode_config.get("providers", {}).get(active_provider, {})
-        if provider_config.get("api_key") and provider_config.get("model"):
-            return True  # Found at least one validly configured mode
+        if _is_mode_section_valid(mode_config):
+            return True
             
     return False
 
@@ -199,21 +216,31 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         t for t in tools.TOOLS_METADATA if t["function"]["name"] not in disallowed_tools
     ]
 
-    # Get model and API key for the current agent_mode
-    mode_config = cfg.get("modes", {}).get(agent_mode, {})
-    active_provider = mode_config.get("active_provider")
+    # Get model and API key, falling back to global settings
+    modes = cfg.get("modes", {})
+    global_config = modes.get("global", {})
+    mode_config = modes.get(agent_mode, {})
+
+    active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
     model, api_key = None, None
 
     if active_provider:
-        provider_config = mode_config.get("providers", {}).get(active_provider, {})
-        model_name = provider_config.get("model")
-        api_key = provider_config.get("api_key")
+        # Mode-specific provider settings override global ones
+        global_provider_settings = global_config.get("providers", {}).get(active_provider, {})
+        mode_provider_settings = mode_config.get("providers", {}).get(active_provider, {})
+        
+        # Merge settings, with mode-specific taking precedence
+        final_provider_config = {**global_provider_settings, **mode_provider_settings}
+        
+        model_name = final_provider_config.get("model")
+        api_key = final_provider_config.get("api_key") # Can be None
+        
         if model_name:
             model = f"{active_provider}/{model_name}"
 
-    if not model or not api_key:
-        console.print(f"[bold red]Error:[/] Agent mode '{agent_mode}' is not configured.")
-        console.print("Please use `/config` to set the provider, model, and API key for this mode.")
+    if not model: # Model is required, API key is not
+        console.print(f"[bold red]Error:[/] Agent mode '{agent_mode}' is not configured (or is missing a model).")
+        console.print("Please use `/config` to set the provider and model for this mode or for the 'global' settings.")
         return # Stop processing and return to the user prompt
 
     while True:

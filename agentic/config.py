@@ -154,23 +154,39 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
 
         model = provider_config.get("model", "Not set")
         api_key = provider_config.get("api_key")
-        api_key_display = f"****{api_key[-4:]}" if api_key else "Not set"
+        api_key_display = f"****{api_key[-4:]}" if api_key else "Not set (Optional)"
 
         config_view_content = (
             f"[bold cyan]Provider:[/bold cyan] {active_provider or 'Not set'}\n"
             f"[bold cyan]Model:[/bold cyan] {model}\n"
             f"[bold cyan]API Key:[/bold cyan] {api_key_display}"
         )
-        console.print(Panel(config_view_content, title=f"[bold green]Configuring '{mode_name}' Mode[/]", expand=False))
+        console.print(Panel(config_view_content, title=f"[bold green]Configuring '{mode_name.capitalize()}' Mode[/]", expand=False))
 
         menu_items = [
             "1. Select Provider",
             "2. Edit Model",
             "3. Edit API Key",
             None,
-            "4. Back (Save Changes for this mode)",
-            "5. Back (Discard Changes for this mode)",
         ]
+        # Dynamically build menu
+        next_option_num = 4
+        reset_option_idx, save_option_idx, discard_option_idx = None, None, None
+
+        if mode_name != "global":
+            menu_items.append(f"{next_option_num}. Reset to Global Defaults")
+            reset_option_idx = len(menu_items) - 1
+            next_option_num += 1
+        
+        menu_items.append(None)
+
+        save_option_idx = len(menu_items)
+        menu_items.append(f"{next_option_num}. Back (Save Changes)")
+        next_option_num += 1
+
+        discard_option_idx = len(menu_items)
+        menu_items.append(f"{next_option_num}. Back (Discard Changes)")
+
         terminal_menu = TerminalMenu(
             menu_items,
             title="Use UP/DOWN keys to navigate, ENTER to select.",
@@ -180,8 +196,13 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
         )
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 5:  # Discard and Back
+        if selected_index is None or selected_index == discard_option_idx:  # Discard and Back
             config_to_edit["modes"][mode_name] = original_mode_cfg
+            break
+        
+        if selected_index == reset_option_idx: # Reset to Global
+            if mode_name in config_to_edit["modes"]:
+                del config_to_edit["modes"][mode_name]
             break
 
         if selected_index == 0:  # Select Provider
@@ -192,8 +213,11 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             provider_menu = TerminalMenu(all_providers, title="Select a provider")
             sel_provider_idx = provider_menu.show()
             if sel_provider_idx is not None:
-                mode_cfg["active_provider"] = all_providers[sel_provider_idx]
-                mode_cfg.setdefault("providers", {}).setdefault(all_providers[sel_provider_idx], {})
+                new_provider = all_providers[sel_provider_idx]
+                # If provider changes, preserve model/key if they exist under the new provider
+                existing_settings = mode_cfg.get("providers", {}).get(new_provider, {})
+                mode_cfg["active_provider"] = new_provider
+                mode_cfg.setdefault("providers", {})[new_provider] = existing_settings
             continue
 
         elif selected_index == 1:  # Edit Model
@@ -221,21 +245,25 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
                 console.print("\n[yellow]Please select a provider first.[/yellow]")
                 console.input("Press Enter to continue...")
                 continue
-            new_api_key = console.input(f"Enter new API Key for {active_provider}: ").strip()
+            new_api_key = console.input(f"Enter new API Key for {active_provider} (optional, press Enter to clear): ").strip()
             if new_api_key:
                 mode_cfg["providers"].setdefault(active_provider, {})["api_key"] = new_api_key
+            else:
+                mode_cfg.get("providers", {}).get(active_provider, {}).pop("api_key", None)
             continue
 
-        elif selected_index == 3 or selected_index == 4:  # Save and Back
+        elif selected_index == save_option_idx:  # Save and Back
             active_provider = mode_cfg.get("active_provider")
             if not active_provider:
-                console.print("\n[bold red]Provider must be selected. Changes not saved.[/bold red]")
-                console.input("Press Enter to continue...")
-                continue
-            
+                # This case means the user cleared the provider. We should remove the mode config.
+                if mode_name in config_to_edit["modes"]:
+                    del config_to_edit["modes"][mode_name]
+                break
+
             provider_cfg = mode_cfg.get("providers", {}).get(active_provider, {})
-            if not provider_cfg.get("model") or not provider_cfg.get("api_key"):
-                console.print(f"[bold red]Model and API Key required for '{active_provider}'. Changes not saved.[/bold red]")
+            # Model is required if a provider is specified. API key is not.
+            if not provider_cfg.get("model"):
+                console.print(f"[bold red]A Model must be specified for provider '{active_provider}'. Changes not saved.[/bold red]")
                 console.input("Press Enter to continue...")
                 continue
             
@@ -251,23 +279,36 @@ def prompt_for_config() -> dict:
 
     provider_models = _get_provider_models()
     all_providers = sorted(list(provider_models.keys()))
-    all_modes = ["code", "ask", "architect"]
+    # Add 'global' and 'agent-maker' modes
+    all_modes = ["global", "code", "ask", "architect", "agent-maker"]
     config_to_edit.setdefault("modes", {})
 
     while True:
         console.clear()
         console.print(Panel("Select a mode to configure, or save/exit.", title="[bold green]Configuration Menu[/]", expand=False))
 
+        modes_cfg = config_to_edit.get("modes", {})
+        global_cfg = modes_cfg.get("global", {})
+
         menu_items = []
         for mode_name in all_modes:
-            mode_config = config_to_edit["modes"].get(mode_name, {})
+            mode_config = modes_cfg.get(mode_name, {})
+            
+            # Determine provider and model, with fallback to global for non-global modes
             provider = mode_config.get("active_provider")
             model = ""
+            source = ""
+
             if provider:
                 model = mode_config.get("providers", {}).get(provider, {}).get("model", "")
-            
-            display_model = f"{provider}/{model}" if provider and model else "Not Configured"
-            menu_items.append(f"{mode_name.capitalize():<10} ({display_model})")
+            elif mode_name != "global" and global_cfg.get("active_provider"):
+                provider = global_cfg.get("active_provider")
+                model = global_cfg.get("providers", {}).get(provider, {}).get("model", "")
+                if model:
+                    source = " (uses Global)"
+
+            display_model = f"{provider}/{model}{source}" if provider and model else "Not Configured"
+            menu_items.append(f"{mode_name.capitalize():<15} ({display_model})")
         
         menu_items.extend([None, "Save and Exit", "Exit without Saving"])
         
@@ -285,8 +326,12 @@ def prompt_for_config() -> dict:
             return original_config
         
         if selected_index == len(all_modes) + 1: # "Save and Exit"
-            # Remove the now-obsolete top-level active_mode key if it exists
-            config_to_edit.pop("active_mode", None)
+            # Remove empty mode configurations before saving
+            modes_to_del = [m for m, c in config_to_edit.get("modes", {}).items() if not c]
+            for m in modes_to_del:
+                if m in config_to_edit["modes"]:
+                    del config_to_edit["modes"][m]
+
             save_config(config_to_edit)
             console.print("\n[bold green]✔ Configuration saved successfully.[/bold green]")
             return config_to_edit
