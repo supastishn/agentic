@@ -561,7 +561,12 @@ def start_interactive_session(initial_prompt, cfg):
                     output = tools.shell(command)
                     console.print(Panel(output, title=f"[bold yellow]! {title_command}[/]", border_style="yellow"))
                 continue
-            
+                
+            # Catch all other slash commands as unknown
+            if user_input.startswith('/'):
+                console.print(f"[bold red]Error:[/] Unknown command '{user_input.split()[0]}'. Type /help for a list of commands.")
+                continue
+
             messages.append({"role": "user", "content": user_input})
             try:
                 process_llm_turn(messages, read_files_in_session, cfg, agent_mode, yolo_mode=yolo_mode)
