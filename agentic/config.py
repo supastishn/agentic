@@ -328,6 +328,11 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
     """Interactively prompts for a single mode's configuration."""
     console = Console()
     
+    HACKCLUB_AI_KEY = "hackclub_ai"
+    HACKCLUB_AI_DISPLAY_NAME = "Hackclub AI (No setup needed!)"
+    HACKCLUB_API_BASE = "https://api.hackclub.com/v1"
+    HACKCLUB_MODEL_URL = f"{HACKCLUB_API_BASE}/model"
+
     # Work on a specific slice of the config
     mode_cfg = config_to_edit["modes"].setdefault(mode_name, {})
     # Keep a backup to revert if user cancels
@@ -337,6 +342,8 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
         console.clear()
 
         active_provider = mode_cfg.get("active_provider")
+        is_hackclub = active_provider == HACKCLUB_AI_KEY
+        
         provider_config = {}
         if active_provider:
             providers = mode_cfg.setdefault("providers", {})
@@ -344,11 +351,11 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
 
         model = provider_config.get("model", "Not set")
         api_key = provider_config.get("api_key")
-        api_key_display = f"****{api_key[-4:]}" if api_key else "Not set (Optional)"
-        tool_strategy = mode_cfg.get("tool_strategy", "tool_calls")
+        api_key_display = "Not required" if is_hackclub else (f"****{api_key[-4:]}" if api_key else "Not set (Optional)")
+        tool_strategy = mode_cfg.get("tool_strategy", "xml" if is_hackclub else "tool_calls")
 
         config_view_content = (
-            f"[bold cyan]Provider:[/bold cyan] {active_provider or 'Not set'}\n"
+            f"[bold cyan]Provider:[/bold cyan] {HACKCLUB_AI_DISPLAY_NAME if is_hackclub else active_provider or 'Not set'}\n"
             f"[bold cyan]Model:[/bold cyan] {model}\n"
             f"[bold cyan]API Key:[/bold cyan] {api_key_display}\n"
             f"[bold cyan]Tool Strategy:[/bold cyan] {tool_strategy}"
@@ -357,9 +364,9 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
 
         menu_items = [
             "1. Select Provider",
-            "2. Edit Model",
-            "3. Edit API Key",
-            "4. Edit Tool Strategy",
+            "2. Edit Model" if not is_hackclub else "[dim]2. Edit Model (N/A)[/dim]",
+            "3. Edit API Key" if not is_hackclub else "[dim]3. Edit API Key (N/A)[/dim]",
+            "4. Edit Tool Strategy" if not is_hackclub else "[dim]4. Edit Tool Strategy (N/A)[/dim]",
             None,
         ]
         # Dynamically build menu
@@ -399,20 +406,46 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             break
 
         if selected_index == 0:  # Select Provider
-            if not all_providers:
-                console.print("\n[yellow]Could not determine providers.[/yellow]")
-                console.input("Press Enter to continue...")
-                continue
-            provider_menu = TerminalMenu(all_providers, title="Select a provider")
+            provider_menu_items = [HACKCLUB_AI_DISPLAY_NAME] + all_providers
+            provider_menu = TerminalMenu(provider_menu_items, title="Select a provider")
             sel_provider_idx = provider_menu.show()
-            if sel_provider_idx is not None:
-                new_provider = all_providers[sel_provider_idx]
-                # If provider changes, preserve model/key if they exist under the new provider
-                existing_settings = mode_cfg.get("providers", {}).get(new_provider, {})
-                mode_cfg["active_provider"] = new_provider
-                mode_cfg.setdefault("providers", {})[new_provider] = existing_settings
+
+            if sel_provider_idx is None:
+                continue
+
+            if sel_provider_idx == 0: # Hackclub AI selected
+                new_provider_key = HACKCLUB_AI_KEY
+                try:
+                    with console.status("[yellow]Fetching Hackclub AI model...[/]"):
+                        response = requests.get(HACKCLUB_MODEL_URL, timeout=5)
+                        response.raise_for_status()
+                        model_name = response.json()["model"]
+                    
+                    mode_cfg["active_provider"] = new_provider_key
+                    providers = mode_cfg.setdefault("providers", {})
+                    providers[new_provider_key] = {
+                        "model": model_name,
+                        "api_base": HACKCLUB_API_BASE,
+                    }
+                    # Force tool strategy and remove API key
+                    mode_cfg["tool_strategy"] = "xml"
+                    providers[new_provider_key].pop("api_key", None)
+
+                except requests.RequestException as e:
+                    console.print(f"[bold red]Error:[/] Could not fetch Hackclub AI model info: {e}")
+                    console.input("Press Enter to continue...")
+            else: # Other provider selected
+                new_provider_key = all_providers[sel_provider_idx - 1]
+                existing_settings = mode_cfg.get("providers", {}).get(new_provider_key, {})
+                mode_cfg["active_provider"] = new_provider_key
+                mode_cfg.setdefault("providers", {})[new_provider_key] = existing_settings
             continue
 
+        elif is_hackclub and selected_index in [1, 2, 3]:
+            console.print("\n[yellow]This setting cannot be changed for Hackclub AI.[/yellow]")
+            console.input("Press Enter to continue...")
+            continue
+        
         elif selected_index == 1:  # Edit Model
             active_provider = mode_cfg.get("active_provider")
             if not active_provider:

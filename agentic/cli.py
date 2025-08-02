@@ -5,6 +5,7 @@ import sys
 import json
 import os
 import re
+import requests
 import xml.etree.ElementTree as ET
 import litellm
 from rich.console import Console
@@ -264,7 +265,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
     mode_config = modes.get(agent_mode, {})
 
     active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
-    model, api_key = None, None
+    model, api_key, api_base = None, None, None
     tool_strategy = "tool_calls"
 
     if active_provider:
@@ -277,10 +278,16 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         
         model_name = final_provider_config.get("model")
         api_key = final_provider_config.get("api_key") # Can be None
+        api_base = final_provider_config.get("api_base") # Can be None
         tool_strategy = final_provider_config.get("tool_strategy", "tool_calls")
         
         if model_name:
-            model = f"{active_provider}/{model_name}"
+            if active_provider == "hackclub_ai":
+                # Hackclub is an OpenAI-compatible endpoint.
+                # We tell litellm it's an 'openai' model but point to a different base URL.
+                model = f"openai/{model_name}"
+            else:
+                model = f"{active_provider}/{model_name}"
 
     if not model: # Model is required, API key is not
         console.print(f"[bold red]Error:[/] Agent mode '{agent_mode}' is not configured (or is missing a model).")
@@ -288,7 +295,9 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         return # Stop processing and return to the user prompt
 
     all_models_info = config._get_provider_models()
-    model_capabilities = all_models_info.get(active_provider, {}).get(model_name, {})
+    # For hackclub_ai, we look up capabilities using 'openai' as the key
+    lookup_provider = "openai" if active_provider == "hackclub_ai" else active_provider
+    model_capabilities = all_models_info.get(lookup_provider, {}).get(model_name, {})
     supports_system_message = model_capabilities.get("supports_system_message", True)
 
     # If model doesn't support system messages, move content to the first user message.
@@ -305,6 +314,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             response = litellm.completion(
                 model=model,
                 api_key=api_key,
+                api_base=api_base,
                 messages=messages,
                 tools=available_tools_metadata,
                 tool_choice="auto",
@@ -316,7 +326,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             messages.append(choice.message)
             tool_calls = choice.message.tool_calls
         else: # xml strategy
-            response = litellm.completion(model=model, api_key=api_key, messages=messages)
+            response = litellm.completion(model=model, api_key=api_key, api_base=api_base, messages=messages)
             choice = response.choices[0]
             response_content = choice.message.content or ""
             
@@ -458,7 +468,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         with Live(panel, refresh_per_second=10, console=console) as live:
             # For tool_calls, we need a new completion call to get the final answer.
             stream_response = litellm.completion(
-                model=model, api_key=api_key, messages=messages, stream=True
+                model=model, api_key=api_key, api_base=api_base, messages=messages, stream=True
             )
             for chunk in stream_response:
                 content = chunk.choices[0].delta.content
@@ -881,11 +891,42 @@ def main():
     """Main function for the agentic CLI tool."""
     cfg = config.load_config()
 
+    if not cfg: # Truly empty config, first run
+        console.print("[bold yellow]Welcome to Agentic! No configuration found, setting up with default (Hackclub AI).[/]")
+        try:
+            with console.status("[yellow]Fetching Hackclub AI model...[/]"):
+                HACKCLUB_API_BASE = "https://api.hackclub.com/v1"
+                response = requests.get(f"{HACKCLUB_API_BASE}/model", timeout=5)
+                response.raise_for_status()
+                model_name = response.json()["model"]
+
+            default_cfg = {
+                "modes": {
+                    "global": {
+                        "active_provider": "hackclub_ai",
+                        "providers": {
+                            "hackclub_ai": {
+                                "model": model_name,
+                                "api_base": HACKCLUB_API_BASE,
+                            }
+                        },
+                        "tool_strategy": "xml",
+                    }
+                }
+            }
+            cfg = default_cfg
+            config.save_config(cfg)
+            console.print("[bold green]✔ Default configuration saved. Use `/config` to change it later.[/bold green]")
+        except requests.RequestException as e:
+            console.print(f"[bold red]Error:[/] Could not set up default Hackclub AI config: {e}")
+            console.print("Please configure manually.")
+            # Fall through to manual configuration
+
     if not is_config_valid(cfg):
-        console.print("[bold yellow]Welcome to Agentic! Please configure your API key and model.[/]")
+        console.print("[bold yellow]Your agent is not configured. Please set it up.[/bold yellow]")
         cfg = config.prompt_for_config()
         if not is_config_valid(cfg):
-            console.print("[bold red]Active provider is not fully configured. Exiting.[/]")
+            console.print("[bold red]Active provider is not fully configured. Exiting.[/bold red]")
             sys.exit(1)
 
     parser = argparse.ArgumentParser(
