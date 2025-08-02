@@ -483,6 +483,8 @@ def display_help():
 | `/config`       | Open the configuration menu.                                |
 | `/yolo`         | Toggle YOLO mode (disables safety confirmations).           |
 | `/mode <name>`  | Switch agent mode (code, ask, architect).                   |
+| `/clear`        | Clears the current conversation context.                    |
+| `/compress`     | Summarizes the conversation to reduce context size.         |
 | `/exit` or `exit` | Exit the interactive session.                               |
 | `! <command>`   | Execute a shell command directly from your terminal.        |
 
@@ -499,6 +501,21 @@ def display_help():
         )
     )
 
+
+def _find_api_key_for_provider(cfg: dict, provider: str) -> str | None:
+    """Searches the config for an API key for the given provider."""
+    modes_cfg = cfg.get("modes", {})
+    # Prioritize global config
+    if "global" in modes_cfg:
+        key = modes_cfg["global"].get("providers", {}).get(provider, {}).get("api_key")
+        if key:
+            return key
+    # Then check other modes
+    for mode_config in modes_cfg.values():
+        key = mode_config.get("providers", {}).get(provider, {}).get("api_key")
+        if key:
+            return key
+    return None
 
 def load_memories() -> str:
     """Loads global and project-specific memories from the data directory."""
@@ -647,6 +664,104 @@ def start_interactive_session(initial_prompt, cfg):
 
             if user_input.lower() == "/help":
                 display_help()
+                continue
+            elif user_input.lower() == "/clear":
+                messages = [{"role": "system", "content": get_system_prompt(agent_mode, cfg)}]
+                read_files_in_session.clear()
+                console.print("[bold green]Conversation context has been cleared.[/bold green]")
+                continue
+            elif user_input.lower() == "/compress":
+                compression_cfg = cfg.get("compression", {})
+                provider = compression_cfg.get("provider")
+                model_name = compression_cfg.get("model")
+
+                if not provider or not model_name:
+                    console.print("[bold red]Error:[/] Compression model not configured. Use `/config` to set it.")
+                    continue
+
+                if len(messages) <= 1:
+                    console.print("[yellow]Not enough conversation to compress.[/yellow]")
+                    continue
+
+                api_key = _find_api_key_for_provider(cfg, provider)
+                model = f"{provider}/{model_name}"
+                
+                conversation_text_parts = []
+                for msg in messages[1:]: # Skip system prompt
+                    role = msg.get("role")
+                    content = msg.get("content")
+                    tool_calls = msg.get("tool_calls")
+
+                    if role == "user":
+                        conversation_text_parts.append(f"User: {str(content)}")
+                    elif role == "assistant":
+                        text = "Assistant:"
+                        if content:
+                            text += f"\n{str(content)}"
+                        if tool_calls:
+                            # Handle both object and dict representations of tool_calls
+                            for tc in tool_calls:
+                                try:
+                                    if isinstance(tc, dict):
+                                        func = tc.get("function", {})
+                                        name = func.get("name")
+                                        args = func.get("arguments")
+                                    else: # assume object
+                                        name = tc.function.name
+                                        args = tc.function.arguments
+                                    text += f"\n- Tool Call: {name}({args})"
+                                except Exception:
+                                    text += "\n- (Could not parse tool call)"
+                        conversation_text_parts.append(text)
+                    elif role == "tool":
+                        tool_name = msg.get("name")
+                        tool_content = str(msg.get("content", ""))
+                        conversation_text_parts.append(f"Tool ({tool_name}):\n{tool_content}")
+                
+                conversation_for_summary = "\n\n".join(conversation_text_parts)
+                
+                summary_prompt = (
+                    "You are a summarization expert. Your task is to create a concise summary of the following "
+                    "conversation between a user and an AI assistant. Focus on the key information, decisions made, "
+                    "code written or modified, and the overall progress of the task. The summary will be used to "
+                    "provide context for a new session, so it should be self-contained and easy to understand.\n\n"
+                    "## Conversation to Summarize\n\n"
+                    f"{conversation_for_summary}"
+                )
+                
+                try:
+                    with console.status("[bold yellow]Compressing conversation...[/]"):
+                        response = litellm.completion(
+                            model=model,
+                            api_key=api_key,
+                            messages=[{"role": "user", "content": summary_prompt}]
+                        )
+                        summary = response.choices[0].message.content
+                except Exception as e:
+                    console.print(f"[bold red]Error during compression:[/] {e}")
+                    continue
+
+                # Reset context
+                messages = [{"role": "system", "content": get_system_prompt(agent_mode, cfg)}]
+                read_files_in_session.clear()
+                
+                # Add summary to new context
+                summary_user_prompt = (
+                    "The previous conversation has been summarized to save context space. "
+                    f"Here is the summary:\n\n{summary}\n\n"
+                    "Based on this, please continue with your task or await further instructions."
+                )
+                messages.append({"role": "user", "content": summary_user_prompt})
+                
+                console.print(Panel(summary, title="[bold green]Conversation Summary[/]", border_style="green"))
+                
+                # Let the agent respond to the summary
+                try:
+                    process_llm_turn(messages, read_files_in_session, cfg, agent_mode, yolo_mode=yolo_mode)
+                except Exception as e:
+                    console.print(f"[bold red]An error occurred after compression:[/] {e}")
+                    messages.pop()
+
                 continue
             elif user_input.lower() == "/yolo":
                 yolo_mode = not yolo_mode

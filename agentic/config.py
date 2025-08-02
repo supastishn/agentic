@@ -142,6 +142,93 @@ def save_config(config: dict):
     
     CONFIG_FILE.write_bytes(encrypted_data)
 
+def _prompt_for_compression_config(config_to_edit: dict, provider_models: dict, all_providers: list):
+    """Interactively prompts for compression model configuration."""
+    console = Console()
+    
+    # Work on a specific slice of the config
+    comp_cfg = config_to_edit.setdefault("compression", {})
+    # Keep a backup to revert if user cancels
+    original_comp_cfg = json.loads(json.dumps(comp_cfg))
+
+    while True:
+        console.clear()
+
+        provider = comp_cfg.get("provider")
+        model = comp_cfg.get("model", "Not set")
+
+        config_view_content = (
+            f"[bold cyan]Provider:[/bold cyan] {provider or 'Not set'}\n"
+            f"[bold cyan]Model:[/bold cyan] {model}"
+        )
+        console.print(Panel(config_view_content, title="[bold green]Configuring Compression Model[/]", expand=False))
+
+        menu_items = [
+            "1. Select Provider",
+            "2. Edit Model",
+            None,
+            "3. Back (Save Changes)",
+            "4. Back (Discard Changes)",
+        ]
+
+        terminal_menu = TerminalMenu(
+            menu_items,
+            title="Use UP/DOWN keys to navigate, ENTER to select.",
+            menu_cursor="> ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_green", "fg_black"),
+        )
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 4:  # Discard and Back
+            config_to_edit["compression"] = original_comp_cfg
+            # Ensure key is removed if it was empty before
+            if not config_to_edit["compression"]:
+                config_to_edit.pop("compression", None)
+            break
+        
+        if selected_index == 0:  # Select Provider
+            if not all_providers:
+                console.print("\n[yellow]Could not determine providers.[/yellow]")
+                console.input("Press Enter to continue...")
+                continue
+            provider_menu = TerminalMenu(all_providers, title="Select a provider")
+            sel_provider_idx = provider_menu.show()
+            if sel_provider_idx is not None:
+                new_provider = all_providers[sel_provider_idx]
+                # If provider changes, clear the model as it's likely invalid for the new provider
+                if comp_cfg.get("provider") != new_provider:
+                    comp_cfg.pop("model", None)
+                comp_cfg["provider"] = new_provider
+            continue
+
+        elif selected_index == 1:  # Edit Model
+            provider = comp_cfg.get("provider")
+            if not provider:
+                console.print("\n[yellow]Please select a provider first.[/yellow]")
+                console.input("Press Enter to continue...")
+                continue
+            
+            models_for_provider = list(provider_models.get(provider, {}).keys())
+
+            if not models_for_provider:
+                console.print(f"\n[yellow]No models found for '{provider}'. Enter one manually.[/yellow]")
+                new_model = console.input(f"Enter model for {provider}: ").strip()
+            else:
+                model_menu = TerminalMenu(models_for_provider, title=f"Select a model for {provider}")
+                sel_model_idx = model_menu.show()
+                new_model = models_for_provider[sel_model_idx] if sel_model_idx is not None else None
+            
+            if new_model:
+                comp_cfg["model"] = new_model
+            continue
+
+        elif selected_index == 3:  # Save and Back
+            # If config is incomplete, remove it to keep config clean
+            if not comp_cfg.get("provider") or not comp_cfg.get("model"):
+                config_to_edit.pop("compression", None)
+            break
+
 def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: dict, all_providers: list):
     """Interactively prompts for a single mode's configuration."""
     console = Console()
@@ -364,7 +451,18 @@ def prompt_for_config() -> dict:
             display_model = f"{provider}/{model}{source}" if provider and model else "Not Configured"
             menu_items.append(f"{mode_name.capitalize():<15} ({display_model})")
         
-        menu_items.extend([None, "Save and Exit", "Exit without Saving"])
+        # Add Compression config option
+        menu_items.append(None)
+        comp_cfg = config_to_edit.get("compression", {})
+        comp_provider = comp_cfg.get("provider")
+        comp_model = comp_cfg.get("model")
+        comp_display = f"{comp_provider}/{comp_model}" if comp_provider and comp_model else "Not Configured"
+        compression_item_text = f"Compression       ({comp_display})"
+        menu_items.append(compression_item_text)
+
+        save_item_text = "Save and Exit"
+        exit_item_text = "Exit without Saving"
+        menu_items.extend([None, save_item_text, exit_item_text])
         
         terminal_menu = TerminalMenu(
             menu_items,
@@ -374,12 +472,14 @@ def prompt_for_config() -> dict:
             menu_highlight_style=("bg_green", "fg_black"),
         )
         selected_index = terminal_menu.show()
+        
+        selected_item_text = menu_items[selected_index] if selected_index is not None else None
 
-        if selected_index is None or selected_index == len(all_modes) + 2: # "Exit without Saving" or ESC
+        if selected_item_text is None or selected_item_text == exit_item_text: # "Exit without Saving" or ESC
             console.print("\n[yellow]Configuration changes discarded.[/yellow]")
             return original_config
         
-        if selected_index == len(all_modes) + 1: # "Save and Exit"
+        if selected_item_text == save_item_text: # "Save and Exit"
             # Remove empty mode configurations before saving
             modes_to_del = [m for m, c in config_to_edit.get("modes", {}).items() if not c]
             for m in modes_to_del:
@@ -393,4 +493,7 @@ def prompt_for_config() -> dict:
         if selected_index is not None and selected_index < len(all_modes):
             selected_mode = all_modes[selected_index]
             _prompt_for_one_mode(config_to_edit, selected_mode, provider_models, all_providers)
+        elif selected_item_text == compression_item_text:
+            _prompt_for_compression_config(config_to_edit, provider_models, all_providers)
+            
             # The loop will now continue, re-rendering the main menu
