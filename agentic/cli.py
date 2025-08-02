@@ -421,8 +421,6 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                 tool_choice="auto",
                 search=enable_web_search,
             )
-            if active_provider == "hackclub_ai":
-                console.print(response)
             _update_session_stats(response, session_stats, model_capabilities)
             choice = response.choices[0]
             if show_reasoning and hasattr(choice.message, "reasoning_content") and choice.message.reasoning_content:
@@ -440,8 +438,6 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
             tool_calls = choice.message.tool_calls
         else: # xml strategy
             response = litellm.completion(model=model, api_key=api_key, api_base=api_base, messages=messages, search=enable_web_search)
-            if active_provider == "hackclub_ai":
-                console.print(response)
             _update_session_stats(response, session_stats, model_capabilities)
             choice = response.choices[0]
             if show_reasoning and hasattr(choice.message, "reasoning_content") and choice.message.reasoning_content:

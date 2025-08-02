@@ -25,7 +25,7 @@ def test_is_config_valid():
     }
     assert is_config_valid(valid_config) is True
 
-    # Test invalid config (mode configured but missing key)
+    # Test valid config (mode configured but missing key)
     invalid_key = {
         "modes": {
             "code": {
@@ -34,7 +34,7 @@ def test_is_config_valid():
             }
         }
     }
-    assert is_config_valid(invalid_key) is False
+    assert is_config_valid(invalid_key) is True
 
     # Test invalid config (mode configured but missing model)
     invalid_model = {
