@@ -120,7 +120,22 @@ class CodeRAG:
                     input=batch_docs,
                     api_key=api_key
                 ).data
-                embeddings_list.extend([e.embedding for e in response])
+                for item in response:
+                    try:
+                        # Try to access as an object attribute
+                        embedding = item.embedding
+                    except AttributeError:
+                        # If that fails, try as a dictionary key
+                        try:
+                            embedding = item["embedding"]
+                        except (KeyError, TypeError):
+                            console.print(
+                                "[bold red]Error: Could not find 'embedding' in the API response item.[/bold red]"
+                            )
+                            console.print("Offending item:")
+                            console.print(item)
+                            raise ValueError("Invalid embedding response format from API.")
+                    embeddings_list.append(embedding)
 
         # Add to ChromaDB in batches to avoid overwhelming the system
         for i in range(0, len(ids), batch_size):
@@ -137,7 +152,22 @@ class CodeRAG:
         model = f"{self.embedding_config['provider']}/{self.embedding_config['model']}"
         api_key = self.embedding_config.get("api_key")
         
-        query_embedding = litellm.embedding(model=model, input=[text], api_key=api_key).data[0].embedding
+        response_item = litellm.embedding(model=model, input=[text], api_key=api_key).data[0]
+        
+        try:
+            # Try to access as an object attribute
+            query_embedding = response_item.embedding
+        except AttributeError:
+            # If that fails, try as a dictionary key
+            try:
+                query_embedding = response_item["embedding"]
+            except (KeyError, TypeError):
+                console.print(
+                    "[bold red]Error: Could not find 'embedding' in the query response item.[/bold red]"
+                )
+                console.print("Offending item:")
+                console.print(response_item)
+                raise ValueError("Invalid embedding response format from API for query.")
         
         results = self.collection.query(
             query_embeddings=[query_embedding],
