@@ -1405,12 +1405,8 @@ def main():
     if not cfg: # Truly empty config, first run
         console.print("[bold yellow]Welcome to Agentic! No configuration found, setting up with default (Hackclub AI).[/]")
         try:
-            with console.status("[yellow]Fetching Hackclub AI model...[/]"):
-                HACKCLUB_API_BASE = "https://ai.hackclub.com"
-                HACKCLUB_MODEL_URL = "https://ai.hackclub.com/model"
-                response = requests.get(HACKCLUB_MODEL_URL, timeout=5)
-                response.raise_for_status()
-                model_name = response.json()["model"]
+            HACKCLUB_API_BASE = "https://ai.hackclub.com"
+            model_name = "AI Hackclub"
 
             default_cfg = {
                 "modes": {
@@ -1429,7 +1425,7 @@ def main():
             cfg = default_cfg
             config.save_config(cfg)
             console.print("[bold green]✔ Default configuration saved. Use `/config` to change it later.[/bold green]")
-        except requests.RequestException as e:
+        except Exception as e:
             console.print(f"[bold red]Error:[/] Could not set up default Hackclub AI config: {e}")
             console.print("Please configure manually.")
             # Fall through to manual configuration

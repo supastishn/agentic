@@ -442,7 +442,6 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
     HACKCLUB_AI_KEY = "hackclub_ai"
     HACKCLUB_AI_DISPLAY_NAME = "Hackclub AI (No setup needed!)"
     HACKCLUB_API_BASE = "https://ai.hackclub.com"
-    HACKCLUB_MODEL_URL = "https://ai.hackclub.com/model"
 
     # Work on a specific slice of the config
     mode_cfg = config_to_edit["modes"].setdefault(mode_name, {})
@@ -563,25 +562,17 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             new_provider_key = None
             if sel_provider_idx == 0: # Hackclub AI selected
                 new_provider_key = HACKCLUB_AI_KEY
-                try:
-                    with console.status("[yellow]Fetching Hackclub AI model...[/]"):
-                        response = requests.get(HACKCLUB_MODEL_URL, timeout=5)
-                        response.raise_for_status()
-                        model_name = response.json()["model"]
-                    
-                    mode_cfg["active_provider"] = new_provider_key
-                    providers = mode_cfg.setdefault("providers", {})
-                    providers[new_provider_key] = {
-                        "model": model_name,
-                        "api_base": HACKCLUB_API_BASE,
-                    }
-                    # Force tool strategy and remove API key
-                    mode_cfg["tool_strategy"] = "xml"
-                    providers[new_provider_key].pop("api_key", None)
-
-                except requests.RequestException as e:
-                    console.print(f"[bold red]Error:[/] Could not fetch Hackclub AI model info: {e}")
-                    console.input("Press Enter to continue...")
+                model_name = "AI Hackclub"
+                
+                mode_cfg["active_provider"] = new_provider_key
+                providers = mode_cfg.setdefault("providers", {})
+                providers[new_provider_key] = {
+                    "model": model_name,
+                    "api_base": HACKCLUB_API_BASE,
+                }
+                # Force tool strategy and remove API key
+                mode_cfg["tool_strategy"] = "xml"
+                providers[new_provider_key].pop("api_key", None)
             
             elif provider_menu_items[sel_provider_idx] == CUSTOM_PROVIDER_OPTION:
                 custom_provider = console.input("Enter custom provider name: ").strip()
