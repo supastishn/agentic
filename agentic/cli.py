@@ -32,6 +32,16 @@ from .tools import generate_xml_tool_prompt
 
 console = Console()
 
+ASCII_LOGO = r"""
+[bold green]   ###    #######   ######   #######  #######  ####   ######  [/bold green]
+[bold green]  ## ##  ##     ## ##    ## ##     ##   ##      ##   ##    ## [/bold green]
+[bold cyan] ##   ## ##     ## ##       ##     ##   ##      ##   ##       [/bold cyan]
+[bold cyan]##     ## ##     ##  ######  ##     ##   ##      ##    ######  [/bold cyan]
+[bold blue]######### ##     ##       ## ##     ##   ##      ##         ## [/bold blue]
+[bold blue]##     ## ##     ## ##    ## ##     ##   ##      ##   ##    ## [/bold blue]
+[bold magenta]##     ##  #######   ######   #######   ##     ####   ######  [/bold magenta]
+"""
+
 class SubAgentEndTask(Exception):
     def __init__(self, reason: str, info: str = ""):
         self.reason = reason
@@ -1001,10 +1011,10 @@ def main():
         config.prompt_for_config()
         sys.exit(0)
 
+    console.print(ASCII_LOGO)
     console.print(
         Panel(
             "Type '/help' for a list of commands.",
-            title="[bold green]Agentic[/]",
             subtitle="[cyan]Interactive Mode[/]",
             expand=False,
         )
