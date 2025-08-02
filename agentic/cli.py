@@ -1156,21 +1156,27 @@ def start_interactive_session(initial_prompt, cfg):
                 console.print(f"[bold red]Error:[/] Unknown command '{user_input.split()[0]}'. Type /help for a list of commands.")
                 continue
 
-            final_user_prompt = user_input
             if rag_retriever:
                 with console.status("[bold cyan]Searching RAG index...[/]"):
                     rag_context = rag_retriever.query(user_input)
                 
+                # Clean up any previous RAG context from the system prompt
+                system_prompt = messages[0]['content']
+                system_prompt = re.sub(r'\n\n### RAG Context From Last Query\n\n.*', '', system_prompt, flags=re.DOTALL)
+                
                 if rag_context and "No relevant context" not in rag_context:
-                    final_user_prompt = (
-                        "Use the following code context to answer my question.\n\n"
-                        "### Context\n"
-                        f"{rag_context}\n\n"
-                        "### My Question\n"
-                        f"{user_input}"
+                    # Add new RAG context to system prompt
+                    rag_prompt_addition = (
+                        "### RAG Context From Last Query\n\n"
+                        "Use the following code context to answer the user's last question.\n\n"
+                        f"{rag_context}"
                     )
+                    messages[0]['content'] = f"{system_prompt}\n\n{rag_prompt_addition}"
+                else:
+                    # No new context, just ensure old context is removed
+                    messages[0]['content'] = system_prompt
 
-            messages.append({"role": "user", "content": final_user_prompt})
+            messages.append({"role": "user", "content": user_input})
             try:
                 process_llm_turn(messages, read_files_in_session, cfg, agent_mode, session_stats, yolo_mode=yolo_mode)
             except Exception as e:
