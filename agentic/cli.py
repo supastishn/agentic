@@ -356,6 +356,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
     DANGEROUS_TOOLS = {"WriteFile", "Edit", "Shell", "Git"}
     available_tools_metadata = _get_available_tools(agent_mode, is_sub_agent, cfg)
+    show_reasoning = cfg.get("misc_settings", {}).get("show_reasoning", False)
 
     # Get model and API key, falling back to global settings
     modes = cfg.get("modes", {})
@@ -424,6 +425,14 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                 console.print(response)
             _update_session_stats(response, session_stats, model_capabilities)
             choice = response.choices[0]
+            if show_reasoning and hasattr(choice.message, "reasoning_content") and choice.message.reasoning_content:
+                console.print(
+                    Panel(
+                        Markdown(choice.message.reasoning_content, style="default", code_theme="monokai"),
+                        title="[bold blue]Reasoning[/]",
+                        border_style="blue",
+                    )
+                )
             if choice.finish_reason != "tool_calls":
                 break # Go to final streaming response
             
@@ -435,6 +444,14 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                 console.print(response)
             _update_session_stats(response, session_stats, model_capabilities)
             choice = response.choices[0]
+            if show_reasoning and hasattr(choice.message, "reasoning_content") and choice.message.reasoning_content:
+                console.print(
+                    Panel(
+                        Markdown(choice.message.reasoning_content, style="default", code_theme="monokai"),
+                        title="[bold blue]Reasoning[/]",
+                        border_style="blue",
+                    )
+                )
             response_content = choice.message.content or ""
             
             # Some models (like qwen) add thinking tags. Strip them for cleaner output.

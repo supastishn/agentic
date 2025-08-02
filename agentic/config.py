@@ -988,6 +988,43 @@ def _prompt_for_safety_settings(config_to_edit: dict):
         elif selected_index == 2:
             break
 
+def _prompt_for_misc_settings(config_to_edit: dict):
+    """Interactively prompts for Miscellaneous settings."""
+    console = Console()
+    
+    settings = config_to_edit.setdefault("misc_settings", {})
+    original_settings = json.loads(json.dumps(settings))
+
+    while True:
+        console.clear()
+        show_reasoning = settings.get("show_reasoning", False)
+
+        config_view_content = (
+            f"[bold cyan]Show LLM Reasoning:[/bold cyan] {'On' if show_reasoning else 'Off'}"
+        )
+        console.print(Panel(config_view_content, title="[bold green]Miscellaneous Settings[/]", expand=False))
+
+        menu_items = [
+            f"1. Toggle Show Reasoning (current: {'On' if show_reasoning else 'Off'})",
+            None,
+            "2. Back (Save Changes)",
+            "3. Back (Discard Changes)",
+        ]
+
+        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 3:
+            config_to_edit["misc_settings"] = original_settings
+            if not config_to_edit["misc_settings"]:
+                config_to_edit.pop("misc_settings", None)
+            break
+        elif selected_index == 0:
+            settings["show_reasoning"] = not show_reasoning
+            continue
+        elif selected_index == 2:
+            break
+
 def _prompt_for_other_settings(config_to_edit: dict):
     """Shows a submenu for various settings."""
     console = Console()
@@ -1001,14 +1038,15 @@ def _prompt_for_other_settings(config_to_edit: dict):
             "3. Memory Settings",
             "4. Tools Settings",
             "5. Safety & Cost Settings",
+            "6. Miscellaneous Settings",
             None,
-            "6. Back to Main Menu",
+            "7. Back to Main Menu",
         ]
 
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 6:
+        if selected_index is None or selected_index == 7:
             break
         elif selected_index == 0:
             _prompt_for_custom_instructions(config_to_edit)
@@ -1020,6 +1058,8 @@ def _prompt_for_other_settings(config_to_edit: dict):
             _prompt_for_tools_settings(config_to_edit)
         elif selected_index == 4:
             _prompt_for_safety_settings(config_to_edit)
+        elif selected_index == 5:
+            _prompt_for_misc_settings(config_to_edit)
 
 
 def prompt_for_config() -> dict:
