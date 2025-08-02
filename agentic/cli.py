@@ -29,18 +29,10 @@ from . import tools
 from . import config
 from .rag import CodeRAG
 from .tools import generate_xml_tool_prompt
-from abc import ABC, abstractmethod
+from prompt_toolkit.filters import Filter
 from prompt_toolkit.application.current import get_app
 
 # Vendored filters from prompt-toolkit to avoid versioning issues.
-class Filter(ABC):
-    """
-    Abstract base class for a filter.
-    This is a simple callable that returns a boolean.
-    """
-    @abstractmethod
-    def __call__(self) -> bool:
-        ...
 
 class IsDone(Filter):
     """
