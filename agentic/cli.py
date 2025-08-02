@@ -526,6 +526,7 @@ def display_help():
 |--------------------------|------------------------------------------------------------------|
 | `/help`                  | Show this help message.                                          |
 | `/config`                | Open the configuration menu.                                     |
+| `/load_preset <name>`    | Load a saved configuration preset.                               |
 | `/mode <name>`           | Switch agent mode (code, ask, architect).                        |
 | `/clear`                 | Clears the current conversation context.                         |
 | `/compress`              | Summarizes the conversation to reduce context size.              |
@@ -941,6 +942,38 @@ def start_interactive_session(initial_prompt, cfg):
                 else:
                     console.print("[bold red]Error:[/] Invalid RAG command. Use `/rag init`, `/rag update`, or `/rag deinit`.")
                     continue
+            elif user_input.lower().startswith("/load_preset"):
+                parts = user_input.strip().split(maxsplit=1)
+                if len(parts) < 2:
+                    presets = cfg.get("presets", {})
+                    console.print("[bold red]Usage: /load_preset <preset_name>[/]")
+                    if presets:
+                        console.print(f"Available presets: {', '.join(sorted(presets.keys()))}")
+                    else:
+                        console.print("No presets saved.")
+                    continue
+                
+                preset_name = parts[1]
+                presets = cfg.get("presets", {})
+
+                if preset_name not in presets:
+                    console.print(f"[bold red]Error:[/] Preset '{preset_name}' not found.")
+                    if presets:
+                        console.print(f"Available presets: {', '.join(sorted(presets.keys()))}")
+                    continue
+                
+                # Load the preset by updating the current config object
+                preset_data = presets[preset_name]
+                current_presets = cfg.get("presets", {}) # Persist the presets themselves
+                cfg.clear()
+                cfg.update(preset_data)
+                cfg["presets"] = current_presets
+                
+                # Reload system prompt as config has changed
+                messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
+                
+                console.print(f"[bold green]✔ Preset '{preset_name}' loaded. Agent capabilities updated.[/bold green]")
+                continue
             elif user_input.lower().startswith("/memory"):
                 parts = user_input.strip().split(maxsplit=2)
                 command = parts[1] if len(parts) > 1 else None

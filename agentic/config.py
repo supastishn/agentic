@@ -146,6 +146,81 @@ def save_config(config: dict):
     
     CONFIG_FILE.write_bytes(encrypted_data)
 
+def _prompt_for_save_preset(config_to_edit: dict):
+    """Saves the current configuration as a named preset."""
+    console = Console()
+    console.clear()
+    
+    preset_name = console.input("Enter a name for this preset: ").strip()
+    if not preset_name:
+        console.print("\n[yellow]Preset name cannot be empty.[/yellow]")
+        console.input("Press Enter to continue...")
+        return
+
+    # The config to save is everything EXCEPT the presets themselves
+    config_to_save = {k: v for k, v in config_to_edit.items() if k != "presets"}
+    
+    presets = config_to_edit.setdefault("presets", {})
+    if preset_name in presets:
+        if TerminalMenu(["Yes", "No"], title=f"Preset '{preset_name}' already exists. Overwrite?").show() != 0:
+            console.print("\n[yellow]Save cancelled.[/yellow]")
+            console.input("Press Enter to continue...")
+            return
+    
+    presets[preset_name] = config_to_save
+    console.print(f"\n[bold green]✔ Preset '{preset_name}' saved.[/bold green]")
+    console.input("Press Enter to continue...")
+
+def _prompt_for_load_preset(config_to_edit: dict):
+    """Loads a configuration from a saved preset."""
+    console = Console()
+    presets = config_to_edit.get("presets", {})
+    if not presets:
+        console.print("\n[yellow]No presets have been saved.[/yellow]")
+        console.input("Press Enter to continue...")
+        return
+        
+    preset_names = sorted(list(presets.keys()))
+    terminal_menu = TerminalMenu(preset_names, title="Select a preset to load")
+    selected_index = terminal_menu.show()
+    
+    if selected_index is not None:
+        selected_preset_name = preset_names[selected_index]
+        preset_data = presets[selected_preset_name]
+        
+        # Clear the current config, but keep the presets dict
+        current_presets = config_to_edit.get("presets", {})
+        config_to_edit.clear()
+        config_to_edit.update(preset_data)
+        config_to_edit["presets"] = current_presets # Restore presets
+        
+        console.print(f"\n[bold green]✔ Preset '{selected_preset_name}' loaded.[/bold green]")
+        console.input("Press Enter to continue...")
+
+def _prompt_for_delete_preset(config_to_edit: dict):
+    """Deletes a saved preset."""
+    console = Console()
+    presets = config_to_edit.get("presets", {})
+    if not presets:
+        console.print("\n[yellow]No presets to delete.[/yellow]")
+        console.input("Press Enter to continue...")
+        return
+        
+    preset_names = sorted(list(presets.keys()))
+    terminal_menu = TerminalMenu(preset_names, title="Select a preset to delete")
+    selected_index = terminal_menu.show()
+
+    if selected_index is not None:
+        selected_preset_name = preset_names[selected_index]
+        
+        if TerminalMenu(["Yes", "No"], title=f"Are you sure you want to delete preset '{selected_preset_name}'?").show() == 0:
+            del config_to_edit["presets"][selected_preset_name]
+            console.print(f"\n[bold green]✔ Preset '{selected_preset_name}' deleted.[/bold green]")
+        else:
+            console.print("\n[yellow]Deletion cancelled.[/yellow]")
+            
+        console.input("Press Enter to continue...")
+
 def _prompt_for_weak_model_config(config_to_edit: dict, provider_models: dict, all_providers: list):
     """Interactively prompts for weak model configuration."""
     console = Console()
@@ -846,8 +921,23 @@ def prompt_for_config() -> dict:
 
         modes_cfg = config_to_edit.get("modes", {})
         global_cfg = modes_cfg.get("global", {})
+        
+        # --- PRESET MENU ---
+        presets = config_to_edit.get("presets", {})
+        load_preset_item_text = f"Load Preset... ({len(presets)} saved)"
+        save_preset_item_text = "Save Current Config as Preset..."
+        delete_preset_item_text = "Delete a Preset..."
+        
+        menu_items = [
+            load_preset_item_text,
+            save_preset_item_text,
+        ]
+        if presets:
+            menu_items.append(delete_preset_item_text)
+        menu_items.append(None) # Separator
 
-        menu_items = []
+        # --- MODE MENU ---
+        mode_menu_items = []
         for mode_name in all_modes:
             mode_config = modes_cfg.get(mode_name, {})
             provider = mode_config.get("active_provider")
@@ -863,8 +953,9 @@ def prompt_for_config() -> dict:
                     source = " (uses Global)"
 
             display_model = f"{provider}/{model}{source}" if provider and model else "Not Configured"
-            menu_items.append(f"Mode: {mode_name.capitalize():<15} ({display_model})")
-    
+            mode_menu_items.append(f"Mode: {mode_name.capitalize():<15} ({display_model})")
+        
+        menu_items.extend(mode_menu_items)
         menu_items.append(None)
         
         weak_model_cfg = config_to_edit.get("weak_model", {})
@@ -909,9 +1000,21 @@ def prompt_for_config() -> dict:
             save_config(config_to_edit)
             console.print("\n[bold green]✔ Configuration saved successfully.[/bold green]")
             return config_to_edit
+
+        if selected_item_text == load_preset_item_text:
+            _prompt_for_load_preset(config_to_edit)
+            continue
+        elif selected_item_text == save_preset_item_text:
+            _prompt_for_save_preset(config_to_edit)
+            continue
+        elif presets and selected_item_text == delete_preset_item_text:
+            _prompt_for_delete_preset(config_to_edit)
+            continue
         
-        if selected_index is not None and selected_index < len(all_modes):
-            selected_mode = all_modes[selected_index]
+        if selected_item_text in mode_menu_items:
+            # Find the corresponding mode name
+            mode_idx = mode_menu_items.index(selected_item_text)
+            selected_mode = all_modes[mode_idx]
             _prompt_for_one_mode(config_to_edit, selected_mode, provider_models, all_providers)
         elif selected_item_text == weak_model_item_text:
             _prompt_for_weak_model_config(config_to_edit, provider_models, all_providers)
