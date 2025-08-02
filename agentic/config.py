@@ -349,60 +349,6 @@ def _prompt_for_embedding_config(config_to_edit: dict, provider_models: dict):
                 config_to_edit.pop("embedding", None)
             break
 
-def _prompt_for_other_settings(config_to_edit: dict):
-    """Interactively prompts for other miscellaneous settings."""
-    console = Console()
-    
-    settings = config_to_edit.setdefault("other_settings", {})
-    # Keep a backup to revert if user cancels
-    original_settings = json.loads(json.dumps(settings))
-
-    while True:
-        console.clear()
-
-        batch_size = settings.get("rag_batch_size", 100)
-
-        config_view_content = (
-            f"[bold cyan]RAG Indexing Batch Size:[/bold cyan] {batch_size}"
-        )
-        console.print(Panel(config_view_content, title="[bold green]Other Settings[/]", expand=False))
-
-        menu_items = [
-            "1. Edit RAG Batch Size",
-            None,
-            "2. Back (Save Changes)",
-            "3. Back (Discard Changes)",
-        ]
-
-        terminal_menu = TerminalMenu(
-            menu_items,
-            title="Use UP/DOWN keys to navigate, ENTER to select.",
-            menu_cursor="> ",
-            menu_cursor_style=("fg_green", "bold"),
-            menu_highlight_style=("bg_green", "fg_black"),
-        )
-        selected_index = terminal_menu.show()
-
-        if selected_index is None or selected_index == 3:  # Discard and Back
-            config_to_edit["other_settings"] = original_settings
-            if not config_to_edit["other_settings"]:
-                config_to_edit.pop("other_settings", None)
-            break
-        
-        if selected_index == 0:  # Edit RAG Batch Size
-            new_size_str = console.input("Enter new batch size (e.g., 100): ").strip()
-            try:
-                new_size = int(new_size_str)
-                if new_size <= 0:
-                    raise ValueError
-                settings["rag_batch_size"] = new_size
-            except (ValueError, TypeError):
-                console.print("\n[bold red]Invalid input. Please enter a positive whole number.[/bold red]")
-                console.input("Press Enter to continue...")
-            continue
-
-        elif selected_index == 2:  # Save and Back
-            break
 
 def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: dict, all_providers: list):
     """Interactively prompts for a single mode's configuration."""
@@ -641,6 +587,135 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             break
 
 
+def _prompt_for_rag_settings(config_to_edit: dict):
+    """Interactively prompts for RAG settings."""
+    console = Console()
+    
+    settings = config_to_edit.setdefault("rag_settings", {})
+    original_settings = json.loads(json.dumps(settings))
+
+    while True:
+        console.clear()
+
+        auto_init = settings.get("auto_init_rag", False)
+        batch_size = settings.get("rag_batch_size", 100)
+
+        config_view_content = (
+            f"[bold cyan]Auto-initialize RAG on startup:[/bold cyan] {'On' if auto_init else 'Off'}\n"
+            f"[bold cyan]Indexing Batch Size:[/bold cyan] {batch_size}"
+        )
+        console.print(Panel(config_view_content, title="[bold green]RAG Settings[/]", expand=False))
+
+        menu_items = [
+            f"1. Toggle Auto-init (current: {'On' if auto_init else 'Off'})",
+            "2. Edit Batch Size",
+            None,
+            "3. Back (Save Changes)",
+            "4. Back (Discard Changes)",
+        ]
+
+        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 4:
+            config_to_edit["rag_settings"] = original_settings
+            if not config_to_edit["rag_settings"]:
+                config_to_edit.pop("rag_settings", None)
+            break
+        
+        if selected_index == 0:
+            settings["auto_init_rag"] = not auto_init
+            continue
+        elif selected_index == 1:
+            new_size_str = console.input("Enter new batch size (e.g., 100): ").strip()
+            try:
+                new_size = int(new_size_str)
+                if new_size <= 0: raise ValueError
+                settings["rag_batch_size"] = new_size
+            except (ValueError, TypeError):
+                console.print("\n[bold red]Invalid input. Please enter a positive whole number.[/bold red]")
+                console.input("Press Enter to continue...")
+            continue
+        elif selected_index == 3:
+            break
+
+def _prompt_for_memory_settings(config_to_edit: dict):
+    """Interactively prompts for Memory settings."""
+    console = Console()
+    
+    settings = config_to_edit.setdefault("memory_settings", {})
+    original_settings = json.loads(json.dumps(settings))
+
+    while True:
+        console.clear()
+        auto_init = settings.get("auto_init_memories", False)
+        config_view_content = f"[bold cyan]Auto-initialize Memories on startup:[/bold cyan] {'On' if auto_init else 'Off'}"
+        console.print(Panel(config_view_content, title="[bold green]Memory Settings[/]", expand=False))
+
+        menu_items = [
+            f"1. Toggle Auto-init (current: {'On' if auto_init else 'Off'})",
+            None,
+            "2. Back (Save Changes)",
+            "3. Back (Discard Changes)",
+        ]
+
+        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 3:
+            config_to_edit["memory_settings"] = original_settings
+            if not config_to_edit["memory_settings"]:
+                config_to_edit.pop("memory_settings", None)
+            break
+        elif selected_index == 0:
+            settings["auto_init_memories"] = not auto_init
+            continue
+        elif selected_index == 2:
+            break
+
+def _prompt_for_tools_settings(config_to_edit: dict):
+    """Interactively prompts for Tools settings."""
+    console = Console()
+    
+    settings = config_to_edit.setdefault("tools_settings", {})
+    original_settings = json.loads(json.dumps(settings))
+
+    while True:
+        console.clear()
+        enable_user_input = settings.get("enable_user_input", False)
+        enable_think = settings.get("enable_think", True)
+
+        config_view_content = (
+            f"[bold cyan]Enable UserInput Tool:[/bold cyan] {'On' if enable_user_input else 'Off'}\n"
+            f"[bold cyan]Enable Think Tool:[/bold cyan] {'On' if enable_think else 'Off'}"
+        )
+        console.print(Panel(config_view_content, title="[bold green]Tools Settings[/]", expand=False))
+
+        menu_items = [
+            f"1. Toggle UserInput Tool (current: {'On' if enable_user_input else 'Off'})",
+            f"2. Toggle Think Tool (current: {'On' if enable_think else 'Off'})",
+            None,
+            "3. Back (Save Changes)",
+            "4. Back (Discard Changes)",
+        ]
+
+        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 4:
+            config_to_edit["tools_settings"] = original_settings
+            if not config_to_edit["tools_settings"]:
+                config_to_edit.pop("tools_settings", None)
+            break
+        elif selected_index == 0:
+            settings["enable_user_input"] = not enable_user_input
+            continue
+        elif selected_index == 1:
+            settings["enable_think"] = not enable_think
+            continue
+        elif selected_index == 3:
+            break
+
 def prompt_for_config() -> dict:
     """Interactively prompts the user to select a mode and then configure it."""
     console = Console()
@@ -649,13 +724,12 @@ def prompt_for_config() -> dict:
 
     provider_models = _get_provider_models()
     all_providers = sorted(list(provider_models.keys()))
-    # Add 'global' and 'agent-maker' modes
     all_modes = ["global", "code", "ask", "architect", "agent-maker", "memory"]
     config_to_edit.setdefault("modes", {})
 
     while True:
         console.clear()
-        console.print(Panel("Select a mode to configure, or save/exit.", title="[bold green]Configuration Menu[/]", expand=False))
+        console.print(Panel("Select a feature to configure, or save/exit.", title="[bold green]Configuration Menu[/]", expand=False))
 
         modes_cfg = config_to_edit.get("modes", {})
         global_cfg = modes_cfg.get("global", {})
@@ -663,8 +737,6 @@ def prompt_for_config() -> dict:
         menu_items = []
         for mode_name in all_modes:
             mode_config = modes_cfg.get(mode_name, {})
-            
-            # Determine provider and model, with fallback to global for non-global modes
             provider = mode_config.get("active_provider")
             model = ""
             source = ""
@@ -678,29 +750,27 @@ def prompt_for_config() -> dict:
                     source = " (uses Global)"
 
             display_model = f"{provider}/{model}{source}" if provider and model else "Not Configured"
-            menu_items.append(f"{mode_name.capitalize():<15} ({display_model})")
+            menu_items.append(f"Mode: {mode_name.capitalize():<15} ({display_model})")
         
         menu_items.append(None)
         
-        # Add Compression config option
         comp_cfg = config_to_edit.get("compression", {})
-        comp_provider = comp_cfg.get("provider")
-        comp_model = comp_cfg.get("model")
-        comp_display = f"{comp_provider}/{comp_model}" if comp_provider and comp_model else "Not Configured"
-        compression_item_text = f"Compression       ({comp_display})"
+        comp_display = f"{comp_cfg.get('provider', '')}/{comp_cfg.get('model', '')}" if comp_cfg.get('provider') else "Not Configured"
+        compression_item_text = f"Feature: Compression     ({comp_display})"
         menu_items.append(compression_item_text)
 
-        # Add Embedding config option
         emb_cfg = config_to_edit.get("embedding", {})
-        emb_provider = emb_cfg.get("provider")
-        emb_model = emb_cfg.get("model")
-        emb_display = f"{emb_provider}/{emb_model}" if emb_provider and emb_model else "Not Configured"
-        embedding_item_text = f"Embedding (RAG)   ({emb_display})"
+        emb_display = f"{emb_cfg.get('provider', '')}/{emb_cfg.get('model', '')}" if emb_cfg.get('provider') else "Not Configured"
+        embedding_item_text = f"Feature: Embedding Models ({emb_display})"
         menu_items.append(embedding_item_text)
 
-        # Add Other Settings option
-        other_settings_item_text = "Other Settings"
-        menu_items.append(other_settings_item_text)
+        menu_items.append(None)
+        rag_settings_item_text = "Settings: RAG"
+        menu_items.append(rag_settings_item_text)
+        memory_settings_item_text = "Settings: Memory"
+        menu_items.append(memory_settings_item_text)
+        tools_settings_item_text = "Settings: Tools"
+        menu_items.append(tools_settings_item_text)
 
         save_item_text = "Save and Exit"
         exit_item_text = "Exit without Saving"
@@ -717,12 +787,11 @@ def prompt_for_config() -> dict:
         
         selected_item_text = menu_items[selected_index] if selected_index is not None else None
 
-        if selected_item_text is None or selected_item_text == exit_item_text: # "Exit without Saving" or ESC
+        if selected_item_text is None or selected_item_text == exit_item_text:
             console.print("\n[yellow]Configuration changes discarded.[/yellow]")
             return original_config
         
-        if selected_item_text == save_item_text: # "Save and Exit"
-            # Remove empty mode configurations before saving
+        if selected_item_text == save_item_text:
             modes_to_del = [m for m, c in config_to_edit.get("modes", {}).items() if not c]
             for m in modes_to_del:
                 if m in config_to_edit["modes"]:
@@ -739,7 +808,9 @@ def prompt_for_config() -> dict:
             _prompt_for_compression_config(config_to_edit, provider_models, all_providers)
         elif selected_item_text == embedding_item_text:
             _prompt_for_embedding_config(config_to_edit, provider_models)
-        elif selected_item_text == other_settings_item_text:
-            _prompt_for_other_settings(config_to_edit)
-            
-            # The loop will now continue, re-rendering the main menu
+        elif selected_item_text == rag_settings_item_text:
+            _prompt_for_rag_settings(config_to_edit)
+        elif selected_item_text == memory_settings_item_text:
+            _prompt_for_memory_settings(config_to_edit)
+        elif selected_item_text == tools_settings_item_text:
+            _prompt_for_tools_settings(config_to_edit)

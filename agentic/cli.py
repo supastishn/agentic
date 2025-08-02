@@ -56,12 +56,13 @@ CODE_SYSTEM_PROMPT = (
     "You are an AI assistant expert in software development. You have access to a powerful set of tools.\n"
     "Your primary directive is to ALWAYS understand the project context before providing code or solutions.\n\n"
     "**Mandatory Workflow:**\n"
-    "1. **Gather Context:** Start every task by using `ReadFolder` to see the project layout. Then, use `ReadFile` on the most relevant files to understand how the code works. Do not skip this step.\n"
-    "2. **Think & Plan:** Use the `Think` tool to break down the problem, formulate a hypothesis, and create a step-by-step plan. This is a crucial step for complex tasks.\n"
-    "3. **Ask for Feedback (if needed):** If the plan is complex or you are unsure about the best approach, use the `UserInput` tool to ask for clarification or confirmation before proceeding.\n"
-    "4. **Analyze & Execute:** Based on your plan, use `SearchText`, `Edit`, `WriteFile`, or `Shell` to execute the steps.\n"
-    "5. **Consult Web:** Use `WebFetch` if you need external information.\n"
-    "6. **Finish:** Once the task is complete, call `EndTask` with a `reason` of 'success' and `info` summarizing your work. If you cannot complete the task, call `EndTask` with 'failure' and explain why.\n\n"
+    "1. **Consult Memories:** Check your PERMANENT MEMORIES first to see if you already have the context you need.\n"
+    "2. **Gather Context:** If memories are insufficient, use `ReadFolder` to see the project layout. Then, use `ReadFile` on the most relevant files to understand how the code works.\n"
+    "3. **Think & Plan:** Use the `Think` tool to break down the problem, formulate a hypothesis, and create a step-by-step plan. This is a crucial step for complex tasks.\n"
+    "4. **Ask for Feedback (if needed):** If the plan is complex or you are unsure about the best approach, use the `UserInput` tool to ask for clarification or confirmation before proceeding.\n"
+    "5. **Analyze & Execute:** Based on your plan, use `SearchText`, `Edit`, `WriteFile`, or `Shell` to execute the steps.\n"
+    "6. **Consult Web:** Use `WebFetch` if you need external information.\n"
+    "7. **Finish:** Once the task is complete, call `EndTask` with a `reason` of 'success' and `info` summarizing your work. If you cannot complete the task, call `EndTask` with 'failure' and explain why.\n\n"
     "**Tool Guidelines:**\n"
     "- `Think`: Use this to externalize your thought process. It helps you structure your plan and analyze information before taking action.\n"
     "- `UserInput`: Use this to ask for feedback, clarification, or the next feature to implement. Essential for interactive development.\n"
@@ -76,9 +77,10 @@ ASK_SYSTEM_PROMPT = (
     "You are an AI assistant designed to answer questions and provide information. You are in 'ask' mode.\n"
     "Your goal is to be a helpful and knowledgeable resource. You can read files and browse the web to find answers.\n\n"
     "**Workflow:**\n"
-    "1. **Understand the Question:** Analyze the user's query to fully grasp what they are asking.\n"
-    "2. **Gather Information:** Use `ReadFile` to examine relevant files and `WebFetch` to get external information if necessary.\n"
-    "3. **Synthesize and Answer:** Combine the information you've gathered to provide a comprehensive and clear answer. Use `Think` to structure your thoughts.\n\n"
+    "1. **Check Memories:** Consult your PERMANENT MEMORIES first to see if the answer is already there.\n"
+    "2. **Understand the Question:** Analyze the user's query to fully grasp what they are asking.\n"
+    "3. **Gather Information:** If memories are insufficient, use `ReadFile` to examine relevant files and `WebFetch` to get external information if necessary.\n"
+    "4. **Synthesize and Answer:** Combine the information you've gathered to provide a comprehensive and clear answer. Use `Think` to structure your thoughts.\n\n"
     "**Tool Guidelines:**\n"
     "- You do **not** have access to tools that modify files (`WriteFile`, `Edit`) or execute shell commands (`Shell`).\n"
     "- Focus on providing information and answering questions."
@@ -88,11 +90,12 @@ ARCHITECT_SYSTEM_PROMPT = (
     "You are a principal AI software architect. You are in 'architect' mode.\n"
     "Your purpose is to create high-level plans and designs for software projects. Do NOT write implementation code.\n\n"
     "**Workflow:**\n"
-    "1. **Gather Context:** Use `ReadFolder` and `ReadFile` to understand the existing project structure and code.\n"
-    "2. **Deconstruct the Request:** Use the `Think` tool to break down the user's request into architectural components and requirements.\n"
-    "3. **Design the Plan:** Formulate a detailed, step-by-step plan. Describe new files to be created, changes to existing files, and the overall structure. Do not write the code for these changes.\n"
-    "4. **Seek Clarification:** Use `UserInput` if the requirements are ambiguous or to get feedback on your proposed plan.\n"
-    "5. **Finish:** When your plan is complete, call the `EndTask` tool. Set `reason` to 'success' and put your complete, final plan into the `info` parameter.\n\n"
+    "1. **Check Memories:** Consult your PERMANENT MEMORIES first for existing architectural context.\n"
+    "2. **Gather Context:** If memories are insufficient, use `ReadFolder` and `ReadFile` to understand the existing project structure and code.\n"
+    "3. **Deconstruct the Request:** Use the `Think` tool to break down the user's request into architectural components and requirements.\n"
+    "4. **Design the Plan:** Formulate a detailed, step-by-step plan. Describe new files to be created, changes to existing files, and the overall structure. Do not write the code for these changes.\n"
+    "5. **Seek Clarification:** Use `UserInput` if the requirements are ambiguous or to get feedback on your proposed plan.\n"
+    "6. **Finish:** When your plan is complete, call the `EndTask` tool. Set `reason` to 'success' and put your complete, final plan into the `info` parameter.\n\n"
     "**Tool Guidelines:**\n"
     "- Your primary tool is `Think` to outline your architectural plan.\n"
     "- You can read files, but you cannot write or edit them. You cannot use `Shell`.\n"
@@ -175,9 +178,18 @@ def is_config_valid(cfg):
     return False
 
 
-def _get_available_tools(agent_mode: str, is_sub_agent: bool) -> list:
-    """Gets the list of available tools metadata based on the agent's mode."""
+def _get_available_tools(agent_mode: str, is_sub_agent: bool, cfg: dict) -> list:
+    """Gets the list of available tools metadata based on the agent's mode and config."""
+    tools_settings = cfg.get("tools_settings", {})
+    enable_user_input = tools_settings.get("enable_user_input", False)
+    enable_think = tools_settings.get("enable_think", True)
+
     disallowed_tools = set()
+
+    if not enable_think:
+        disallowed_tools.add("Think")
+    if not enable_user_input:
+        disallowed_tools.add("UserInput")
 
     # The 'memory' mode is the only one that should be able to save memories.
     if agent_mode != "memory":
@@ -223,7 +235,7 @@ def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
     
     system_prompt_parts = []
     if tool_strategy == "xml":
-        available_tools = _get_available_tools(mode, is_sub_agent=True)
+        available_tools = _get_available_tools(mode, is_sub_agent=True, cfg=cfg)
         system_prompt_parts.append(generate_xml_tool_prompt(available_tools))
 
     if memories:
@@ -271,7 +283,7 @@ def _should_add_to_history(text: str):
 def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo_mode: bool = False, is_sub_agent: bool = False):
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
     DANGEROUS_TOOLS = {"WriteFile", "Edit", "Shell"}
-    available_tools_metadata = _get_available_tools(agent_mode, is_sub_agent)
+    available_tools_metadata = _get_available_tools(agent_mode, is_sub_agent, cfg)
 
     # Get model and API key, falling back to global settings
     modes = cfg.get("modes", {})
@@ -582,7 +594,7 @@ MODES = ["code", "ask", "architect", "agent-maker", "memory"]
 def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     agent_mode = "code"
-    memories_active = True # New state variable for memory context
+    memories_active = False # Default to OFF
 
     def get_system_prompt(mode, current_cfg):
         # Determine tool strategy from config
@@ -601,7 +613,7 @@ def start_interactive_session(initial_prompt, cfg):
         
         system_prompt_parts = []
         if tool_strategy == "xml":
-            available_tools = _get_available_tools(mode, is_sub_agent=False)
+            available_tools = _get_available_tools(mode, is_sub_agent=False, cfg=current_cfg)
             system_prompt_parts.append(generate_xml_tool_prompt(available_tools))
 
         if memories:
@@ -615,6 +627,34 @@ def start_interactive_session(initial_prompt, cfg):
     history = InMemoryHistory()
     yolo_mode = False
     rag_retriever = None
+
+    # --- Auto-init logic ---
+    if cfg.get("memory_settings", {}).get("auto_init_memories", False):
+        memories_active = True
+        messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
+        console.print("[bold green]Auto-initializing memories into context.[/bold green]")
+
+    if cfg.get("rag_settings", {}).get("auto_init_rag", False):
+        console.print("[bold green]Auto-initializing RAG...[/bold green]")
+        embedding_cfg = cfg.get("embedding")
+        if not embedding_cfg or not embedding_cfg.get("provider") or not embedding_cfg.get("model"):
+            console.print("[bold red]Error:[/] Embedding model not configured. Use `/config` to set it.")
+        else:
+            batch_size = cfg.get("rag_settings", {}).get("rag_batch_size", 100)
+            api_key = _find_api_key_for_provider(cfg, embedding_cfg["provider"])
+            embedding_cfg["api_key"] = api_key
+            try:
+                rag_retriever = CodeRAG(
+                    project_path=os.getcwd(),
+                    config_dir=config.CONFIG_DIR,
+                    embedding_config=embedding_cfg
+                )
+                rag_retriever.index_project(batch_size=batch_size, force_reindex=False)
+                console.print("[bold green]RAG is now active.[/bold green]")
+            except Exception as e:
+                console.print(f"[bold red]Error auto-initializing RAG:[/] {e}")
+                rag_retriever = None
+    # --- End auto-init logic ---
 
     # Handle initial prompt if provided
     if initial_prompt:
@@ -800,7 +840,7 @@ def start_interactive_session(initial_prompt, cfg):
             elif user_input.lower().startswith("/rag"):
                 parts = user_input.lower().split()
                 command = parts[1] if len(parts) > 1 else None
-                batch_size = cfg.get("other_settings", {}).get("rag_batch_size", 100)
+                batch_size = cfg.get("rag_settings", {}).get("rag_batch_size", 100)
 
                 if command == "init":
                     embedding_cfg = cfg.get("embedding")
@@ -915,6 +955,8 @@ def start_interactive_session(initial_prompt, cfg):
                 break
             elif user_input.lower() == "/config":
                 cfg = config.prompt_for_config()
+                # Reload system prompt in case settings affecting it (like tools) changed
+                messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
                 continue
             elif user_input.startswith('!'):
                 command = user_input[1:].strip()
