@@ -16,8 +16,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.filters import is_done
-from prompt_toolkit.filters.standard import has_history
+from prompt_toolkit.filters import is_done, has_history
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
