@@ -105,24 +105,28 @@ class CodeRAG:
 
         return files_to_index
 
-    def index_project(self, batch_size: int = 100, force_reindex: bool = False):
+    def index_project(self, batch_size: int = 100, force_reindex: bool = False, quiet: bool = False):
         """Indexes all relevant files in the project."""
         if not force_reindex and self.has_index():
-            console.print("[yellow]Existing RAG embeddings found. Skipping generation.[/yellow]")
-            console.print("Use `/rag update` to force a re-index.")
+            if not quiet:
+                console.print("[yellow]Existing RAG embeddings found. Skipping generation.[/yellow]")
+                console.print("Use `/rag update` to force a re-index.")
             return
 
         if force_reindex and self.collection.count() > 0:
-            console.print("[yellow]Forcing re-index. Clearing old embeddings...[/yellow]")
+            if not quiet:
+                console.print("[yellow]Forcing re-index. Clearing old embeddings...[/yellow]")
             self.client.delete_collection(name=self.collection.name)
             self.collection = self.client.create_collection(name=self.collection.name)
 
         files = self._scan_files()
         if not files:
-            console.print("[yellow]No files found to index.[/yellow]")
+            if not quiet:
+                console.print("[yellow]No files found to index.[/yellow]")
             return
         
-        console.print(f"Found {len(files)} files to index. Generating embeddings...")
+        if not quiet:
+            console.print(f"Found {len(files)} files to index. Generating embeddings...")
 
         documents = []
         metadatas = []
@@ -143,10 +147,12 @@ class CodeRAG:
                     ids.append(f"doc_{doc_id_counter}")
                     doc_id_counter += 1
             except Exception as e:
-                console.print(f"[yellow]Warning:[/] Could not read or process {file_path}: {e}")
+                if not quiet:
+                    console.print(f"[yellow]Warning:[/] Could not read or process {file_path}: {e}")
 
         if not documents:
-            console.print("[yellow]No content could be extracted from files.[/yellow]")
+            if not quiet:
+                console.print("[yellow]No content could be extracted from files.[/yellow]")
             return
 
         model = f"{self.embedding_config['provider']}/{self.embedding_config['model']}"
@@ -156,7 +162,8 @@ class CodeRAG:
         embeddings_list = []
         for i in range(0, len(documents), batch_size):
             batch_docs = documents[i:i + batch_size]
-            with console.status(f"[yellow]Generating embeddings for batch {i//batch_size + 1}...[/]"):
+
+            def perform_embedding():
                 # --- API base switching logic ---
                 provider = self.embedding_config.get("provider")
                 current_base = None
@@ -189,13 +196,20 @@ class CodeRAG:
                         try:
                             embedding = item["embedding"]
                         except (KeyError, TypeError):
-                            console.print(
-                                "[bold red]Error: Could not find 'embedding' in the API response item.[/bold red]"
-                            )
-                            console.print("Offending item:")
-                            console.print(item)
+                            if not quiet:
+                                console.print(
+                                    "[bold red]Error: Could not find 'embedding' in the API response item.[/bold red]"
+                                )
+                                console.print("Offending item:")
+                                console.print(item)
                             raise ValueError("Invalid embedding response format from API.")
                     embeddings_list.append(embedding)
+
+            if quiet:
+                perform_embedding()
+            else:
+                with console.status(f"[yellow]Generating embeddings for batch {i//batch_size + 1}...[/]"):
+                    perform_embedding()
 
         # Add to ChromaDB in batches to avoid overwhelming the system
         for i in range(0, len(ids), batch_size):
@@ -205,7 +219,8 @@ class CodeRAG:
                 documents=documents[i:i + batch_size],
                 metadatas=metadatas[i:i + batch_size]
             )
-        console.print(f"[bold green]✔ Project indexed successfully.[/bold green] Total documents: {len(ids)}")
+        if not quiet:
+            console.print(f"[bold green]✔ Project indexed successfully.[/bold green] Total documents: {len(ids)}")
 
     def query(self, text: str, n_results=5) -> str:
         """Queries the RAG index and returns formatted context."""

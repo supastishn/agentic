@@ -3,6 +3,7 @@
 import argparse
 import sys
 import json
+import threading
 import os
 import re
 import requests
@@ -280,6 +281,31 @@ def _get_model_info_for_mode(cfg: dict, agent_mode: str) -> tuple:
     model_capabilities = all_models_info.get(lookup_provider, {}).get(model_name, {})
     
     return model_str, model_capabilities
+
+def _run_rag_update(rag_retriever, rag_settings, lock, in_background):
+    if not lock.acquire(blocking=False):
+        console.print("[bold yellow]Skipping RAG update as another is already in progress.[/bold yellow]")
+        return
+
+    def update_task():
+        try:
+            rag_retriever.index_project(
+                batch_size=rag_settings.get("rag_batch_size", 100), 
+                force_reindex=True, 
+                quiet=in_background
+            )
+        finally:
+            lock.release()
+            if in_background:
+                console.print("\n[bold green]Background RAG update finished.[/bold green]")
+
+    if in_background:
+        console.print("[bold cyan]RAG update started in background.[/bold cyan]")
+        thread = threading.Thread(target=update_task)
+        thread.start()
+    else:
+        with console.status("[bold yellow]Updating RAG index...[/]"):
+            update_task()
 
 def _get_sub_agent_system_prompt(mode: str, cfg: dict) -> str:
     """Builds the system prompt for a sub-agent."""
@@ -595,6 +621,8 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                     tool_output = "User denied execution of this tool call."
                 else:
                     if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
+                        if tool_name in ["WriteFile", "Edit"]:
+                            session_stats["edit_count"] = session_stats.get("edit_count", 0) + 1
                         # Inject session-specific state if needed by the tool
                         if tool_name in ["ReadFile", "ReadManyFiles"]:
                             tool_args["read_files_in_session"] = read_files_in_session
@@ -604,6 +632,8 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                         tool_output = f"Unknown tool '{tool_name}'"
             else: # Not dangerous or YOLO mode is on
                 if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
+                    if tool_name in ["WriteFile", "Edit"]:
+                        session_stats["edit_count"] = session_stats.get("edit_count", 0) + 1
                     if tool_name in ["ReadFile", "ReadManyFiles"]:
                         tool_args["read_files_in_session"] = read_files_in_session
                     with console.status("[bold yellow]Executing tool..."):
@@ -816,7 +846,8 @@ def start_interactive_session(initial_prompt, cfg):
     yolo_mode = False
     rag_retriever = None
     prompt_count_since_rag_update = 0
-    session_stats = {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0, "last_prompt_tokens": 0}
+    rag_update_in_progress = threading.Lock()
+    session_stats = {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0, "last_prompt_tokens": 0, "edit_count": 0}
 
     # --- Pre-calculate system prompt cost ---
     modes = cfg.get("modes", {})
@@ -1378,16 +1409,31 @@ def start_interactive_session(initial_prompt, cfg):
             if rag_retriever:
                 rag_settings = cfg.get("rag_settings", {})
                 auto_update_strategy = rag_settings.get("auto_update_strategy")
+                run_in_background = rag_settings.get("run_in_background", False)
+
+                update_triggered = False
+                trigger_reason = ""
                 
                 if auto_update_strategy == "periodic":
                     prompt_count_since_rag_update += 1
                     prompt_interval = rag_settings.get("auto_update_prompt_interval", 5)
                     if prompt_count_since_rag_update >= prompt_interval:
-                        console.print("[bold cyan]RAG auto-update triggered by prompt interval.[/bold cyan]")
-                        with console.status("[bold yellow]Updating RAG index...[/]"):
-                            rag_retriever.index_project(batch_size=rag_settings.get("rag_batch_size", 100), force_reindex=True)
+                        update_triggered = True
+                        trigger_reason = "prompt interval"
                         prompt_count_since_rag_update = 0
                 
+                elif auto_update_strategy == "edits":
+                    edit_count = session_stats.get("edit_count", 0)
+                    edit_interval = rag_settings.get("auto_update_edit_interval", 3)
+                    if edit_count >= edit_interval:
+                        update_triggered = True
+                        trigger_reason = "edit interval"
+                        session_stats["edit_count"] = 0
+                
+                if update_triggered:
+                    console.print(f"[bold cyan]RAG auto-update triggered by {trigger_reason}.[/bold cyan]")
+                    _run_rag_update(rag_retriever, rag_settings, rag_update_in_progress, run_in_background)
+
                 elif auto_update_strategy == "model":
                     weak_model_cfg = cfg.get("weak_model", {})
                     provider = weak_model_cfg.get("provider")
@@ -1429,8 +1475,7 @@ def start_interactive_session(initial_prompt, cfg):
                                         
                                     if "<update>true</update>" in response_content:
                                         console.print("[bold cyan]RAG auto-update triggered by weak model.[/bold cyan]")
-                                        with console.status("[bold yellow]Updating RAG index...[/]"):
-                                            rag_retriever.index_project(batch_size=rag_settings.get("rag_batch_size", 100), force_reindex=True)
+                                        _run_rag_update(rag_retriever, rag_settings, rag_update_in_progress, run_in_background)
 
                                 except Exception as e:
                                     console.print(f"[bold red]Error checking for RAG update with weak model:[/] {e}")

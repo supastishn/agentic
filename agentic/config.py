@@ -722,6 +722,7 @@ def _prompt_for_rag_auto_update(settings: dict):
         strategy_display = {
             "manual": "Manual (only with /rag update)",
             "periodic": f"Every {settings.get('auto_update_prompt_interval', 'N/A')} prompts",
+            "edits": f"Every {settings.get('auto_update_edit_interval', 'N/A')} edits",
             "model": "Use weak model to decide"
         }
 
@@ -731,16 +732,17 @@ def _prompt_for_rag_auto_update(settings: dict):
         menu_items = [
             "1. Manual (only with /rag update)",
             "2. Every X prompts",
-            "3. Use weak model to decide",
+            "3. Every X edits",
+            "4. Use weak model to decide",
             None,
-            "4. Back (Save Changes)",
-            "5. Back (Discard Changes)",
+            "5. Back (Save Changes)",
+            "6. Back (Discard Changes)",
         ]
         
         terminal_menu = TerminalMenu(menu_items, title="Select a strategy", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 5: # Discard
+        if selected_index is None or selected_index == 6: # Discard
             settings.clear()
             settings.update(original_settings)
             break
@@ -748,8 +750,10 @@ def _prompt_for_rag_auto_update(settings: dict):
         if selected_index == 0:
             settings["auto_update_strategy"] = "manual"
             settings.pop("auto_update_prompt_interval", None)
+            settings.pop("auto_update_edit_interval", None)
         elif selected_index == 1:
             settings["auto_update_strategy"] = "periodic"
+            settings.pop("auto_update_edit_interval", None)
             interval_str = console.input("Enter prompt interval (e.g., 5): ").strip()
             try:
                 interval = int(interval_str)
@@ -759,9 +763,21 @@ def _prompt_for_rag_auto_update(settings: dict):
                 console.print("\n[bold red]Invalid input. Please enter a positive whole number.[/bold red]")
                 console.input("Press Enter to continue...")
         elif selected_index == 2:
+            settings["auto_update_strategy"] = "edits"
+            settings.pop("auto_update_prompt_interval", None)
+            interval_str = console.input("Enter edit interval (e.g., 3): ").strip()
+            try:
+                interval = int(interval_str)
+                if interval <= 0: raise ValueError
+                settings["auto_update_edit_interval"] = interval
+            except (ValueError, TypeError):
+                console.print("\n[bold red]Invalid input. Please enter a positive whole number.[/bold red]")
+                console.input("Press Enter to continue...")
+        elif selected_index == 3:
             settings["auto_update_strategy"] = "model"
             settings.pop("auto_update_prompt_interval", None)
-        elif selected_index == 4: # Save
+            settings.pop("auto_update_edit_interval", None)
+        elif selected_index == 5: # Save
             break
 
 def _prompt_for_rag_settings(config_to_edit: dict):
@@ -777,17 +793,20 @@ def _prompt_for_rag_settings(config_to_edit: dict):
         auto_init = settings.get("auto_init_rag", False)
         batch_size = settings.get("rag_batch_size", 100)
         strategy = settings.get("auto_update_strategy", "manual")
+        run_in_background = settings.get("run_in_background", False)
 
         strategy_display = {
             "manual": "Manual",
             "periodic": f"Periodic ({settings.get('auto_update_prompt_interval', 'N/A')} prompts)",
+            "edits": f"Edits-based ({settings.get('auto_update_edit_interval', 'N/A')} edits)",
             "model": "Model-based"
         }
 
         config_view_content = (
             f"[bold cyan]Auto-initialize RAG on startup:[/bold cyan] {'On' if auto_init else 'Off'}\n"
             f"[bold cyan]Indexing Batch Size:[/bold cyan] {batch_size}\n"
-            f"[bold cyan]Auto-update Strategy:[/bold cyan] {strategy_display.get(strategy, 'Manual')}"
+            f"[bold cyan]Auto-update Strategy:[/bold cyan] {strategy_display.get(strategy, 'Manual')}\n"
+            f"[bold cyan]Run Auto-updates in background:[/bold cyan] {'On' if run_in_background else 'Off'}"
         )
         console.print(Panel(config_view_content, title="[bold green]RAG Settings[/]", expand=False))
 
@@ -795,15 +814,16 @@ def _prompt_for_rag_settings(config_to_edit: dict):
             f"1. Toggle Auto-init (current: {'On' if auto_init else 'Off'})",
             "2. Edit Batch Size",
             "3. Configure Auto-update Strategy",
+            f"4. Toggle background updates (current: {'On' if run_in_background else 'Off'})",
             None,
-            "4. Back (Save Changes)",
-            "5. Back (Discard Changes)",
+            "5. Back (Save Changes)",
+            "6. Back (Discard Changes)",
         ]
 
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 5:
+        if selected_index is None or selected_index == 6:
             config_to_edit["rag_settings"] = original_settings
             if not config_to_edit["rag_settings"]:
                 config_to_edit.pop("rag_settings", None)
@@ -825,7 +845,10 @@ def _prompt_for_rag_settings(config_to_edit: dict):
         elif selected_index == 2:
             _prompt_for_rag_auto_update(settings)
             continue
-        elif selected_index == 4:
+        elif selected_index == 3:
+            settings["run_in_background"] = not run_in_background
+            continue
+        elif selected_index == 5:
             break
 
 def _prompt_for_memory_settings(config_to_edit: dict):
