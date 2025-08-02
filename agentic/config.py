@@ -239,15 +239,24 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
                 continue
             
             models_for_provider_dict = provider_models.get(active_provider, {})
-            models = list(models_for_provider_dict.keys())
-            
-            if not models:
+            model_names = list(models_for_provider_dict.keys())
+
+            if not model_names:
                 console.print(f"\n[yellow]No models found for '{active_provider}'. Enter one manually.[/yellow]")
                 new_model = console.input(f"Enter model for {active_provider}: ").strip()
             else:
-                model_menu = TerminalMenu(models, title=f"Select a model for {active_provider}")
+                menu_entries = []
+                for name in model_names:
+                    capabilities = models_for_provider_dict.get(name, {})
+                    supports_fc = capabilities.get("supports_function_calling", False)
+                    if supports_fc:
+                        menu_entries.append(name)
+                    else:
+                        menu_entries.append(f"{name} (tool calls not supported)")
+                
+                model_menu = TerminalMenu(menu_entries, title=f"Select a model for {active_provider}")
                 sel_model_idx = model_menu.show()
-                new_model = models[sel_model_idx] if sel_model_idx is not None else None
+                new_model = model_names[sel_model_idx] if sel_model_idx is not None else None
             
             if new_model:
                 mode_cfg["providers"].setdefault(active_provider, {})["model"] = new_model
