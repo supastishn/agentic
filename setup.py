@@ -18,7 +18,7 @@ setup(
         "litellm",
         "pathspec",
         "playwright",
-        "prompt-toolkit",
+        "prompt-toolkit>=3.0",
         "python-dotenv",
         "requests",
         "rich",
