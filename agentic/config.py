@@ -40,7 +40,7 @@ def _get_provider_models() -> dict:
             return {} # No internet and no cache, so we can't proceed
 
     # 3. Parse the loaded model data
-    provider_models = {}
+    provider_models_info = {}
     for model_key, model_info in model_data.items():
         # Filter out non-dictionary entries and specific keys like 'litellm_spec'
         if not isinstance(model_info, dict) or model_key == "litellm_spec":
@@ -64,17 +64,25 @@ def _get_provider_models() -> dict:
             # e.g., "gpt-4" -> "gpt-4"
             model_name = model_key
         
-        if provider not in provider_models:
-            provider_models[provider] = []
+        if provider not in provider_models_info:
+            provider_models_info[provider] = {}
         
         if model_name:
-            provider_models[provider].append(model_name)
+            # Default to False for function calling, and True for system messages if not specified.
+            supports_function_calling = model_info.get("supports_function_calling", False)
+            supports_system_message = model_info.get("supports_system_message", True)
+
+            provider_models_info[provider][model_name] = {
+                "supports_function_calling": supports_function_calling,
+                "supports_system_message": supports_system_message,
+            }
 
     # Sort model names for consistent display
-    for provider in provider_models:
-        provider_models[provider].sort()
+    for provider in provider_models_info:
+        sorted_models = sorted(provider_models_info[provider].items())
+        provider_models_info[provider] = dict(sorted_models)
         
-    return provider_models
+    return provider_models_info
 
 # --- Constants ---
 CONFIG_DIR = Path.home() / ".agentic-pypi"
@@ -229,7 +237,10 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
                 console.print("\n[yellow]Please select a provider first.[/yellow]")
                 console.input("Press Enter to continue...")
                 continue
-            models = provider_models.get(active_provider, [])
+            
+            models_for_provider_dict = provider_models.get(active_provider, {})
+            models = list(models_for_provider_dict.keys())
+            
             if not models:
                 console.print(f"\n[yellow]No models found for '{active_provider}'. Enter one manually.[/yellow]")
                 new_model = console.input(f"Enter model for {active_provider}: ").strip()
@@ -240,6 +251,11 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             
             if new_model:
                 mode_cfg["providers"].setdefault(active_provider, {})["model"] = new_model
+                # If model doesn't support tool_calls, force strategy to xml
+                model_capabilities = models_for_provider_dict.get(new_model, {})
+                supports_fc = model_capabilities.get("supports_function_calling", False)
+                if not supports_fc:
+                    mode_cfg["tool_strategy"] = "xml"
             continue
 
         elif selected_index == 2:  # Edit API Key
@@ -256,6 +272,18 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             continue
 
         elif selected_index == 3:  # Edit Tool Strategy
+            model = provider_config.get("model")
+            
+            supports_fc = False
+            if active_provider and model:
+                model_capabilities = provider_models.get(active_provider, {}).get(model, {})
+                supports_fc = model_capabilities.get("supports_function_calling", False)
+
+            if not supports_fc:
+                console.print("\n[yellow]The selected model does not support native tool calls. Tool strategy is locked to 'xml'.[/yellow]")
+                console.input("Press Enter to continue...")
+                continue
+            
             strategies = ["tool_calls", "xml"]
             strategy_menu = TerminalMenu(
                 strategies,

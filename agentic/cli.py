@@ -286,6 +286,19 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         console.print("Please use `/config` to set the provider and model for this mode or for the 'global' settings.")
         return # Stop processing and return to the user prompt
 
+    all_models_info = config._get_provider_models()
+    model_capabilities = all_models_info.get(active_provider, {}).get(model_name, {})
+    supports_system_message = model_capabilities.get("supports_system_message", True)
+
+    # If model doesn't support system messages, move content to the first user message.
+    if not supports_system_message and messages and messages[0]["role"] == "system":
+        system_message = messages.pop(0)
+        # Find the first user message to prepend to
+        for msg in messages:
+            if msg["role"] == "user":
+                msg["content"] = f"SYSTEM INSTRUCTIONS:\n{system_message['content']}\n\n---\n\n{msg['content']}"
+                break
+
     while True:
         if tool_strategy == 'tool_calls':
             response = litellm.completion(
