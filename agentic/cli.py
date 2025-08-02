@@ -664,6 +664,12 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                     prompt=tool_args["prompt"],
                     cfg=cfg
                 )
+            # SPECIAL HANDLING for interactive tools that shouldn't be in a spinner
+            elif tool_name == "UserInput":
+                if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
+                    tool_output = tool_func(**tool_args)
+                else:
+                    tool_output = f"Unknown tool '{tool_name}'"
             # REGULAR TOOL EXECUTION
             elif tool_name in DANGEROUS_TOOLS and not yolo_mode:
                 if not Confirm.ask(
