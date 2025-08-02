@@ -733,7 +733,7 @@ def _prompt_for_other_settings(config_to_edit: dict, provider_models: dict, all_
             "6. Back to Main Menu",
         ]
 
-        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "black"))
+        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
         if selected_index is None or selected_index == 6:
