@@ -851,6 +851,55 @@ def _prompt_for_rag_settings(config_to_edit: dict):
         elif selected_index == 5:
             break
 
+def _prompt_for_memory_auto_update(settings: dict):
+    """Sub-menu for configuring Memory auto-update strategy."""
+    console = Console()
+    original_settings = json.loads(json.dumps(settings))
+
+    while True:
+        console.clear()
+        strategy = settings.get("auto_update_strategy", "manual")
+        
+        strategy_display = {
+            "manual": "Manual (only with /memory update)",
+            "edits": f"Every {settings.get('auto_update_edit_interval', 'N/A')} edits",
+        }
+
+        config_view_content = f"[bold cyan]Auto-update Strategy:[/bold cyan] {strategy_display.get(strategy)}"
+        console.print(Panel(config_view_content, title="[bold green]Memory Auto-Update Settings[/]", expand=False))
+
+        menu_items = [
+            "1. Manual (only with /memory update)",
+            "2. Every X edits",
+            None,
+            "3. Back (Save Changes)",
+            "4. Back (Discard Changes)",
+        ]
+        
+        terminal_menu = TerminalMenu(menu_items, title="Select a strategy", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 4: # Discard
+            settings.clear()
+            settings.update(original_settings)
+            break
+        
+        if selected_index == 0:
+            settings["auto_update_strategy"] = "manual"
+            settings.pop("auto_update_edit_interval", None)
+        elif selected_index == 1:
+            settings["auto_update_strategy"] = "edits"
+            interval_str = console.input("Enter edit interval (e.g., 3): ").strip()
+            try:
+                interval = int(interval_str)
+                if interval <= 0: raise ValueError
+                settings["auto_update_edit_interval"] = interval
+            except (ValueError, TypeError):
+                console.print("\n[bold red]Invalid input. Please enter a positive whole number.[/bold red]")
+                console.input("Press Enter to continue...")
+        elif selected_index == 3: # Save
+            break
+
 def _prompt_for_memory_settings(config_to_edit: dict):
     """Interactively prompts for Memory settings."""
     console = Console()
@@ -861,20 +910,34 @@ def _prompt_for_memory_settings(config_to_edit: dict):
     while True:
         console.clear()
         auto_init = settings.get("auto_init_memories", False)
-        config_view_content = f"[bold cyan]Auto-initialize Memories on startup:[/bold cyan] {'On' if auto_init else 'Off'}"
+        strategy = settings.get("auto_update_strategy", "manual")
+        run_in_background = settings.get("run_in_background", False)
+
+        strategy_display = {
+            "manual": "Manual",
+            "edits": f"Edits-based ({settings.get('auto_update_edit_interval', 'N/A')} edits)",
+        }
+
+        config_view_content = (
+            f"[bold cyan]Auto-initialize Memories on startup:[/bold cyan] {'On' if auto_init else 'Off'}\n"
+            f"[bold cyan]Auto-update Strategy:[/bold cyan] {strategy_display.get(strategy, 'Manual')}\n"
+            f"[bold cyan]Run Auto-updates in background:[/bold cyan] {'On' if run_in_background else 'Off'}"
+        )
         console.print(Panel(config_view_content, title="[bold green]Memory Settings[/]", expand=False))
 
         menu_items = [
             f"1. Toggle Auto-init (current: {'On' if auto_init else 'Off'})",
+            "2. Configure Auto-update Strategy",
+            f"3. Toggle background updates (current: {'On' if run_in_background else 'Off'})",
             None,
-            "2. Back (Save Changes)",
-            "3. Back (Discard Changes)",
+            "4. Back (Save Changes)",
+            "5. Back (Discard Changes)",
         ]
 
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 3:
+        if selected_index is None or selected_index == 5:
             config_to_edit["memory_settings"] = original_settings
             if not config_to_edit["memory_settings"]:
                 config_to_edit.pop("memory_settings", None)
@@ -882,7 +945,13 @@ def _prompt_for_memory_settings(config_to_edit: dict):
         elif selected_index == 0:
             settings["auto_init_memories"] = not auto_init
             continue
+        elif selected_index == 1:
+            _prompt_for_memory_auto_update(settings)
+            continue
         elif selected_index == 2:
+            settings["run_in_background"] = not run_in_background
+            continue
+        elif selected_index == 4:
             break
 
 def _prompt_for_tools_settings(config_to_edit: dict):

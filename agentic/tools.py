@@ -298,12 +298,11 @@ def user_input(question: str) -> str:
     )
     return console.input("[bold yellow]Your response: [/]")
 
-def save_memory(text: str, scope: str = "project") -> str:
+def save_memory(text: str, scope: str = "project", source: str = "llm") -> str:
     """
     Saves a key piece of information to a memory file that will be loaded at the start of future sessions.
     Scope can be 'project' (default) or 'global'.
-    'project' scope saves to a file specific to the current project directory.
-    'global' scope saves to a file that is loaded for all projects.
+    Source can be 'llm' (default) or 'user', which helps distinguish memory origins.
     """
     try:
         config._ensure_data_dir()
@@ -316,8 +315,12 @@ def save_memory(text: str, scope: str = "project") -> str:
         else:
             return "Error: Invalid scope. Must be 'project' or 'global'."
 
+        source_comment = f"<!-- {source.upper()} Generated Memory -->"
         with memory_file.open("a", encoding="utf-8") as f:
-            f.write(f"\n\n---\n\n{text}")
+            # Prepend separator if file is not empty.
+            if os.path.getsize(memory_file) > 0:
+                f.write("\n\n---\n\n")
+            f.write(f"{source_comment}\n{text}")
 
         return f"OK, I will remember this for future '{scope}' sessions."
     except Exception as e:
