@@ -144,26 +144,26 @@ def save_config(config: dict):
     
     CONFIG_FILE.write_bytes(encrypted_data)
 
-def _prompt_for_compression_config(config_to_edit: dict, provider_models: dict, all_providers: list):
-    """Interactively prompts for compression model configuration."""
+def _prompt_for_weak_model_config(config_to_edit: dict, provider_models: dict, all_providers: list):
+    """Interactively prompts for weak model configuration."""
     console = Console()
-    
+
     # Work on a specific slice of the config
-    comp_cfg = config_to_edit.setdefault("compression", {})
+    weak_model_cfg = config_to_edit.setdefault("weak_model", {})
     # Keep a backup to revert if user cancels
-    original_comp_cfg = json.loads(json.dumps(comp_cfg))
+    original_weak_model_cfg = json.loads(json.dumps(weak_model_cfg))
 
     while True:
         console.clear()
 
-        provider = comp_cfg.get("provider")
-        model = comp_cfg.get("model", "Not set")
+        provider = weak_model_cfg.get("provider")
+        model = weak_model_cfg.get("model", "Not set")
 
         config_view_content = (
             f"[bold cyan]Provider:[/bold cyan] {provider or 'Not set'}\n"
             f"[bold cyan]Model:[/bold cyan] {model}"
         )
-        console.print(Panel(config_view_content, title="[bold green]Configuring Compression Model[/]", expand=False))
+        console.print(Panel(config_view_content, title="[bold green]Configuring Weak Model[/]", expand=False))
 
         menu_items = [
             "1. Select Provider",
@@ -183,18 +183,18 @@ def _prompt_for_compression_config(config_to_edit: dict, provider_models: dict, 
         selected_index = terminal_menu.show()
 
         if selected_index is None or selected_index == 4:  # Discard and Back
-            config_to_edit["compression"] = original_comp_cfg
+            config_to_edit["weak_model"] = original_weak_model_cfg
             # Ensure key is removed if it was empty before
-            if not config_to_edit["compression"]:
-                config_to_edit.pop("compression", None)
+            if not config_to_edit["weak_model"]:
+                config_to_edit.pop("weak_model", None)
             break
-        
+
         if selected_index == 0:  # Select Provider
             CUSTOM_PROVIDER_OPTION = "Custom..."
             provider_menu_items = [CUSTOM_PROVIDER_OPTION] + all_providers
             provider_menu = TerminalMenu(provider_menu_items, title="Select a provider")
             sel_provider_idx = provider_menu.show()
-            
+
             if sel_provider_idx is None:
                 continue
 
@@ -205,42 +205,42 @@ def _prompt_for_compression_config(config_to_edit: dict, provider_models: dict, 
                 new_provider = provider_menu_items[sel_provider_idx]
 
             if new_provider:
-                if comp_cfg.get("provider") != new_provider:
-                    comp_cfg.pop("model", None)
-                comp_cfg["provider"] = new_provider
+                if weak_model_cfg.get("provider") != new_provider:
+                    weak_model_cfg.pop("model", None)
+                weak_model_cfg["provider"] = new_provider
             continue
 
         elif selected_index == 1:  # Edit Model
-            provider = comp_cfg.get("provider")
+            provider = weak_model_cfg.get("provider")
             if not provider:
                 console.print("\n[yellow]Please select a provider first.[/yellow]")
                 console.input("Press Enter to continue...")
                 continue
-            
+
             CUSTOM_MODEL_OPTION = "Custom..."
             models_for_provider = list(provider_models.get(provider, {}).keys())
             menu_items = [CUSTOM_MODEL_OPTION] + models_for_provider
-            
+
             model_menu = TerminalMenu(menu_items, title=f"Select a model for {provider}")
             sel_model_idx = model_menu.show()
 
             if sel_model_idx is None:
                 continue
-            
+
             new_model = None
             if sel_model_idx == 0: # Custom selected
                 new_model = console.input(f"Enter custom model name for {provider}: ").strip()
             else:
                 new_model = menu_items[sel_model_idx]
-            
+
             if new_model:
-                comp_cfg["model"] = new_model
+                weak_model_cfg["model"] = new_model
             continue
 
         elif selected_index == 3:  # Save and Back
             # If config is incomplete, remove it to keep config clean
-            if not comp_cfg.get("provider") or not comp_cfg.get("model"):
-                config_to_edit.pop("compression", None)
+            if not weak_model_cfg.get("provider") or not weak_model_cfg.get("model"):
+                config_to_edit.pop("weak_model", None)
             break
 
 def _prompt_for_embedding_config(config_to_edit: dict, provider_models: dict):
@@ -587,6 +587,60 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             break
 
 
+def _prompt_for_rag_auto_update(settings: dict):
+    """Sub-menu for configuring RAG auto-update strategy."""
+    console = Console()
+    original_settings = json.loads(json.dumps(settings))
+
+    while True:
+        console.clear()
+        strategy = settings.get("auto_update_strategy", "manual")
+        
+        strategy_display = {
+            "manual": "Manual (only with /rag update)",
+            "periodic": f"Every {settings.get('auto_update_prompt_interval', 'N/A')} prompts",
+            "model": "Use weak model to decide"
+        }
+
+        config_view_content = f"[bold cyan]Auto-update Strategy:[/bold cyan] {strategy_display.get(strategy)}"
+        console.print(Panel(config_view_content, title="[bold green]RAG Auto-Update Settings[/]", expand=False))
+
+        menu_items = [
+            "1. Manual (only with /rag update)",
+            "2. Every X prompts",
+            "3. Use weak model to decide",
+            None,
+            "4. Back (Save Changes)",
+            "5. Back (Discard Changes)",
+        ]
+        
+        terminal_menu = TerminalMenu(menu_items, title="Select a strategy", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 5: # Discard
+            settings.clear()
+            settings.update(original_settings)
+            break
+        
+        if selected_index == 0:
+            settings["auto_update_strategy"] = "manual"
+            settings.pop("auto_update_prompt_interval", None)
+        elif selected_index == 1:
+            settings["auto_update_strategy"] = "periodic"
+            interval_str = console.input("Enter prompt interval (e.g., 5): ").strip()
+            try:
+                interval = int(interval_str)
+                if interval <= 0: raise ValueError
+                settings["auto_update_prompt_interval"] = interval
+            except (ValueError, TypeError):
+                console.print("\n[bold red]Invalid input. Please enter a positive whole number.[/bold red]")
+                console.input("Press Enter to continue...")
+        elif selected_index == 2:
+            settings["auto_update_strategy"] = "model"
+            settings.pop("auto_update_prompt_interval", None)
+        elif selected_index == 4: # Save
+            break
+
 def _prompt_for_rag_settings(config_to_edit: dict):
     """Interactively prompts for RAG settings."""
     console = Console()
@@ -599,25 +653,34 @@ def _prompt_for_rag_settings(config_to_edit: dict):
 
         auto_init = settings.get("auto_init_rag", False)
         batch_size = settings.get("rag_batch_size", 100)
+        strategy = settings.get("auto_update_strategy", "manual")
+
+        strategy_display = {
+            "manual": "Manual",
+            "periodic": f"Periodic ({settings.get('auto_update_prompt_interval', 'N/A')} prompts)",
+            "model": "Model-based"
+        }
 
         config_view_content = (
             f"[bold cyan]Auto-initialize RAG on startup:[/bold cyan] {'On' if auto_init else 'Off'}\n"
-            f"[bold cyan]Indexing Batch Size:[/bold cyan] {batch_size}"
+            f"[bold cyan]Indexing Batch Size:[/bold cyan] {batch_size}\n"
+            f"[bold cyan]Auto-update Strategy:[/bold cyan] {strategy_display.get(strategy, 'Manual')}"
         )
         console.print(Panel(config_view_content, title="[bold green]RAG Settings[/]", expand=False))
 
         menu_items = [
             f"1. Toggle Auto-init (current: {'On' if auto_init else 'Off'})",
             "2. Edit Batch Size",
+            "3. Configure Auto-update Strategy",
             None,
-            "3. Back (Save Changes)",
-            "4. Back (Discard Changes)",
+            "4. Back (Save Changes)",
+            "5. Back (Discard Changes)",
         ]
 
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 4:
+        if selected_index is None or selected_index == 5:
             config_to_edit["rag_settings"] = original_settings
             if not config_to_edit["rag_settings"]:
                 config_to_edit.pop("rag_settings", None)
@@ -636,7 +699,10 @@ def _prompt_for_rag_settings(config_to_edit: dict):
                 console.print("\n[bold red]Invalid input. Please enter a positive whole number.[/bold red]")
                 console.input("Press Enter to continue...")
             continue
-        elif selected_index == 3:
+        elif selected_index == 2:
+            _prompt_for_rag_auto_update(settings)
+            continue
+        elif selected_index == 4:
             break
 
 def _prompt_for_memory_settings(config_to_edit: dict):
@@ -782,10 +848,10 @@ def prompt_for_config() -> dict:
     
         menu_items.append(None)
         
-        comp_cfg = config_to_edit.get("compression", {})
-        comp_display = f"{comp_cfg.get('provider', '')}/{comp_cfg.get('model', '')}" if comp_cfg.get('provider') else "Not Configured"
-        compression_item_text = f"Feature: Compression     ({comp_display})"
-        menu_items.append(compression_item_text)
+        weak_model_cfg = config_to_edit.get("weak_model", {})
+        weak_model_display = f"{weak_model_cfg.get('provider', '')}/{weak_model_cfg.get('model', '')}" if weak_model_cfg.get('provider') else "Not Configured"
+        weak_model_item_text = f"Feature: Weak Model        ({weak_model_display})"
+        menu_items.append(weak_model_item_text)
 
         emb_cfg = config_to_edit.get("embedding", {})
         emb_display = f"{emb_cfg.get('provider', '')}/{emb_cfg.get('model', '')}" if emb_cfg.get('provider') else "Not Configured"
@@ -828,8 +894,8 @@ def prompt_for_config() -> dict:
         if selected_index is not None and selected_index < len(all_modes):
             selected_mode = all_modes[selected_index]
             _prompt_for_one_mode(config_to_edit, selected_mode, provider_models, all_providers)
-        elif selected_item_text == compression_item_text:
-            _prompt_for_compression_config(config_to_edit, provider_models, all_providers)
+        elif selected_item_text == weak_model_item_text:
+            _prompt_for_weak_model_config(config_to_edit, provider_models, all_providers)
         elif selected_item_text == embedding_item_text:
             _prompt_for_embedding_config(config_to_edit, provider_models)
         elif selected_item_text == other_settings_item_text:

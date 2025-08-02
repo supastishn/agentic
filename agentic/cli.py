@@ -627,6 +627,7 @@ def start_interactive_session(initial_prompt, cfg):
     history = InMemoryHistory()
     yolo_mode = False
     rag_retriever = None
+    prompt_count_since_rag_update = 0
 
     # --- Auto-init logic ---
     if cfg.get("memory_settings", {}).get("auto_init_memories", False):
@@ -751,12 +752,12 @@ def start_interactive_session(initial_prompt, cfg):
                 console.print("[bold green]Conversation context has been cleared.[/bold green]")
                 continue
             elif user_input.lower() == "/compress":
-                compression_cfg = cfg.get("compression", {})
-                provider = compression_cfg.get("provider")
-                model_name = compression_cfg.get("model")
+                weak_model_cfg = cfg.get("weak_model", {})
+                provider = weak_model_cfg.get("provider")
+                model_name = weak_model_cfg.get("model")
 
                 if not provider or not model_name:
-                    console.print("[bold red]Error:[/] Compression model not configured. Use `/config` to set it.")
+                    console.print("[bold red]Error:[/] Weak model not configured. Use `/config` to set it.")
                     continue
 
                 if len(messages) <= 1:
@@ -998,6 +999,66 @@ def start_interactive_session(initial_prompt, cfg):
             except Exception as e:
                 console.print(f"[bold red]An error occurred:[/] {e}")
                 messages.pop()
+
+            # --- RAG Auto-update logic ---
+            if rag_retriever:
+                rag_settings = cfg.get("rag_settings", {})
+                auto_update_strategy = rag_settings.get("auto_update_strategy")
+                
+                if auto_update_strategy == "periodic":
+                    prompt_count_since_rag_update += 1
+                    prompt_interval = rag_settings.get("auto_update_prompt_interval", 5)
+                    if prompt_count_since_rag_update >= prompt_interval:
+                        console.print("[bold cyan]RAG auto-update triggered by prompt interval.[/bold cyan]")
+                        with console.status("[bold yellow]Updating RAG index...[/]"):
+                            rag_retriever.index_project(batch_size=rag_settings.get("rag_batch_size", 100), force_reindex=True)
+                        prompt_count_since_rag_update = 0
+                
+                elif auto_update_strategy == "model":
+                    weak_model_cfg = cfg.get("weak_model", {})
+                    provider = weak_model_cfg.get("provider")
+                    model_name = weak_model_cfg.get("model")
+
+                    if not provider or not model_name:
+                        console.print("[bold yellow]Warning:[/] RAG auto-update by model is enabled, but no weak model is configured. Skipping.")
+                    else:
+                        # Check for uncommitted changes
+                        git_diff_output = tools.shell("git diff HEAD")
+                        
+                        # Check if it's a git repo
+                        is_git_repo = "Not a git repository" not in git_diff_output and "fatal:" not in git_diff_output
+                        
+                        if is_git_repo:
+                            # Extract stdout and check if it's empty
+                            stdout_match = re.search(r'STDOUT:\n(.*?)\nSTDERR:', git_diff_output, re.DOTALL)
+                            has_changes = stdout_match and stdout_match.group(1).strip()
+                            
+                            if has_changes:
+                                update_check_prompt = (
+                                    "You are an AI assistant that determines if a codebase index needs to be updated based on file changes. "
+                                    "Given the following `git diff`, respond with `<update>true</update>` if the changes are significant enough to warrant re-indexing the project for RAG, or `<update>false</update>` otherwise. "
+                                    "Consider changes to source code, configurations, or documentation as significant. Ignore trivial changes like whitespace.\n\n"
+                                    f"```diff\n{stdout_match.group(1)}\n```"
+                                )
+                                
+                                try:
+                                    with console.status("[bold yellow]Asking weak model about RAG update...[/]"):
+                                        api_key = _find_api_key_for_provider(cfg, provider)
+                                        model_to_use = f"{provider}/{model_name}"
+                                        response = litellm.completion(
+                                            model=model_to_use,
+                                            api_key=api_key,
+                                            messages=[{"role": "user", "content": update_check_prompt}]
+                                        )
+                                        response_content = response.choices[0].message.content
+                                        
+                                    if "<update>true</update>" in response_content:
+                                        console.print("[bold cyan]RAG auto-update triggered by weak model.[/bold cyan]")
+                                        with console.status("[bold yellow]Updating RAG index...[/]"):
+                                            rag_retriever.index_project(batch_size=rag_settings.get("rag_batch_size", 100), force_reindex=True)
+
+                                except Exception as e:
+                                    console.print(f"[bold red]Error checking for RAG update with weak model:[/] {e}")
 
         except (KeyboardInterrupt, EOFError):
             break
