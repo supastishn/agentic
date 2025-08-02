@@ -647,6 +647,7 @@ def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     agent_mode = "code"
     memories_active = False # Default to OFF
+    last_rag_context = ""
 
     def get_system_prompt(mode, current_cfg):
         # Determine tool strategy from config
@@ -671,6 +672,14 @@ def start_interactive_session(initial_prompt, cfg):
         if memories:
             system_prompt_parts.append(f"### PERMANENT MEMORIES ###\n{memories}")
         
+        if last_rag_context:
+            rag_prompt_addition = (
+                "### RAG Context From Last Query\n\n"
+                "Use the following code context to answer the user's last question.\n\n"
+                f"{last_rag_context}"
+            )
+            system_prompt_parts.append(rag_prompt_addition)
+
         system_prompt_parts.append(f"### TASK ###\n{system_prompt_template}")
         return "\n\n".join(filter(None, system_prompt_parts))
 
@@ -877,6 +886,7 @@ def start_interactive_session(initial_prompt, cfg):
                 display_help()
                 continue
             elif user_input.lower() == "/clear":
+                last_rag_context = ""
                 messages = [{"role": "system", "content": get_system_prompt(agent_mode, cfg)}]
                 read_files_in_session.clear()
                 console.print("[bold green]Conversation context has been cleared.[/bold green]")
@@ -1029,6 +1039,8 @@ def start_interactive_session(initial_prompt, cfg):
 
                 elif command == "deinit":
                     rag_retriever = None
+                    last_rag_context = ""
+                    messages[0]['content'] = get_system_prompt(agent_mode, cfg)
                     console.print("[bold green]RAG has been deactivated for this session.[/bold green]")
                     continue
                 
@@ -1160,21 +1172,13 @@ def start_interactive_session(initial_prompt, cfg):
                 with console.status("[bold cyan]Searching RAG index...[/]"):
                     rag_context = rag_retriever.query(user_input)
                 
-                # Clean up any previous RAG context from the system prompt
-                system_prompt = messages[0]['content']
-                system_prompt = re.sub(r'\n\n### RAG Context From Last Query\n\n.*', '', system_prompt, flags=re.DOTALL)
-                
                 if rag_context and "No relevant context" not in rag_context:
-                    # Add new RAG context to system prompt
-                    rag_prompt_addition = (
-                        "### RAG Context From Last Query\n\n"
-                        "Use the following code context to answer the user's last question.\n\n"
-                        f"{rag_context}"
-                    )
-                    messages[0]['content'] = f"{system_prompt}\n\n{rag_prompt_addition}"
+                    last_rag_context = rag_context
                 else:
-                    # No new context, just ensure old context is removed
-                    messages[0]['content'] = system_prompt
+                    last_rag_context = ""
+            
+            # Rebuild the system prompt to include the latest RAG/memory state
+            messages[0]['content'] = get_system_prompt(agent_mode, cfg)
 
             messages.append({"role": "user", "content": user_input})
             try:
