@@ -358,7 +358,7 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
     
     HACKCLUB_AI_KEY = "hackclub_ai"
     HACKCLUB_AI_DISPLAY_NAME = "Hackclub AI (No setup needed!)"
-    HACKCLUB_API_BASE = "https://ai.hackclub.com/v1"
+    HACKCLUB_API_BASE = "https://ai.hackclub.com"
     HACKCLUB_MODEL_URL = "https://ai.hackclub.com/model"
 
     # Work on a specific slice of the config
