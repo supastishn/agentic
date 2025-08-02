@@ -37,16 +37,19 @@ def _update_session_stats(response, session_stats: dict, model_capabilities: dic
     if not response or not response.usage:
         return
 
-    prompt_tokens = response.usage.prompt_tokens
+    current_prompt_tokens = response.usage.prompt_tokens
     completion_tokens = response.usage.completion_tokens
     
-    session_stats['prompt_tokens'] += prompt_tokens
+    new_prompt_tokens = current_prompt_tokens - session_stats.get("last_prompt_tokens", 0)
+    session_stats["last_prompt_tokens"] = current_prompt_tokens
+    
+    session_stats['prompt_tokens'] += new_prompt_tokens
     session_stats['completion_tokens'] += completion_tokens
 
     in_cost = model_capabilities.get("input_cost_per_token", 0) or 0
     out_cost = model_capabilities.get("output_cost_per_token", 0) or 0
     
-    turn_cost = (prompt_tokens * in_cost) + (completion_tokens * out_cost)
+    turn_cost = (new_prompt_tokens * in_cost) + (completion_tokens * out_cost)
     session_stats['cost'] += turn_cost
 
 ASCII_LOGO = r"""
@@ -524,9 +527,12 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
             out_cost = model_capabilities.get("output_cost_per_token", 0) or 0
             
             try:
-                prompt_tokens = litellm.token_counter(model=model, messages=messages)
-                session_stats['prompt_tokens'] += prompt_tokens
-                session_stats['cost'] += prompt_tokens * in_cost
+                current_prompt_tokens = litellm.token_counter(model=model, messages=messages)
+                new_prompt_tokens = current_prompt_tokens - session_stats.get("last_prompt_tokens", 0)
+                session_stats["last_prompt_tokens"] = current_prompt_tokens
+                
+                session_stats['prompt_tokens'] += new_prompt_tokens
+                session_stats['cost'] += new_prompt_tokens * in_cost
             except Exception:
                 pass # litellm might not know the model, ignore for now
 
@@ -674,7 +680,36 @@ def start_interactive_session(initial_prompt, cfg):
     yolo_mode = False
     rag_retriever = None
     prompt_count_since_rag_update = 0
-    session_stats = {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0}
+    session_stats = {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0, "last_prompt_tokens": 0}
+
+    # --- Pre-calculate system prompt cost ---
+    modes = cfg.get("modes", {})
+    global_config = modes.get("global", {})
+    mode_config = modes.get(agent_mode, {})
+    active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
+
+    if active_provider:
+        # This logic is duplicated from the toolbar, but necessary to get model info before the loop
+        global_provider_settings = global_config.get("providers", {}).get(active_provider, {})
+        mode_provider_settings = mode_config.get("providers", {}).get(active_provider, {})
+        final_provider_config = {**global_provider_settings, **mode_provider_settings}
+        model_name = final_provider_config.get("model")
+
+        if model_name:
+            all_models_info = config._get_provider_models()
+            lookup_provider = "openai" if active_provider == "hackclub_ai" else active_provider
+            model_capabilities = all_models_info.get(lookup_provider, {}).get(model_name, {})
+            in_cost = model_capabilities.get("input_cost_per_token", 0) or 0
+            model_str = f"openai/{model_name}" if active_provider == "hackclub_ai" else f"{active_provider}/{model_name}"
+            
+            try:
+                # Count system prompt tokens and add initial cost
+                prompt_tokens = litellm.token_counter(model=model_str, messages=messages)
+                session_stats['cost'] += prompt_tokens * in_cost
+                session_stats['prompt_tokens'] += prompt_tokens
+                session_stats['last_prompt_tokens'] = prompt_tokens
+            except Exception:
+                pass # Ignore if model is not known to litellm
 
     # --- Auto-init logic ---
     if cfg.get("memory_settings", {}).get("auto_init_memories", False):
@@ -1127,7 +1162,6 @@ def start_interactive_session(initial_prompt, cfg):
                     rag_context = rag_retriever.query(user_input)
                 
                 if rag_context and "No relevant context" not in rag_context:
-                    console.print(Panel(rag_context, title="[bold cyan]Retrieved Context[/]", border_style="cyan", expand=False))
                     final_user_prompt = (
                         "Use the following code context to answer my question.\n\n"
                         "### Context\n"
