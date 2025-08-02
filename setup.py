@@ -13,6 +13,7 @@ setup(
     author="",
     license="ISC",
     install_requires=[
+        "chromadb",
         "cryptography",
         "litellm",
         "prompt-toolkit",
@@ -20,6 +21,7 @@ setup(
         "requests",
         "rich",
         "simple-term-menu",
+        "tiktoken",
     ],
     extras_require={
         'test': ['pytest', 'pytest-mock'],

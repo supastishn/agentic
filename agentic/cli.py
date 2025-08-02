@@ -26,6 +26,7 @@ from prompt_toolkit.formatted_text import to_formatted_text
 
 from . import tools
 from . import config
+from .rag import CodeRAG
 from .tools import generate_xml_tool_prompt
 
 console = Console()
@@ -485,6 +486,9 @@ def display_help():
 | `/mode <name>`  | Switch agent mode (code, ask, architect).                   |
 | `/clear`        | Clears the current conversation context.                    |
 | `/compress`     | Summarizes the conversation to reduce context size.         |
+| `/rag init`     | Initialize and activate RAG for the current project.        |
+| `/rag update`   | Re-index the project files for RAG.                         |
+| `/rag deinit`   | Deactivate RAG for the current session.                     |
 | `/exit` or `exit` | Exit the interactive session.                               |
 | `! <command>`   | Execute a shell command directly from your terminal.        |
 
@@ -581,6 +585,7 @@ def start_interactive_session(initial_prompt, cfg):
     read_files_in_session = set()
     history = InMemoryHistory()
     yolo_mode = False
+    rag_retriever = None
 
     # Handle initial prompt if provided
     if initial_prompt:
@@ -763,6 +768,52 @@ def start_interactive_session(initial_prompt, cfg):
                     messages.pop()
 
                 continue
+            elif user_input.lower().startswith("/rag"):
+                parts = user_input.lower().split()
+                command = parts[1] if len(parts) > 1 else None
+
+                if command == "init":
+                    embedding_cfg = cfg.get("embedding")
+                    if not embedding_cfg or not embedding_cfg.get("provider") or not embedding_cfg.get("model"):
+                        console.print("[bold red]Error:[/] Embedding model not configured. Use `/config` to set it.")
+                        continue
+                    
+                    api_key = _find_api_key_for_provider(cfg, embedding_cfg["provider"])
+                    embedding_cfg["api_key"] = api_key # Add key for the RAG class to use
+
+                    with console.status("[bold yellow]Initializing RAG index...[/]"):
+                        try:
+                            rag_retriever = CodeRAG(
+                                project_path=os.getcwd(),
+                                config_dir=config.CONFIG_DIR,
+                                embedding_config=embedding_cfg
+                            )
+                            rag_retriever.index_project()
+                            console.print("[bold green]RAG is now active.[/bold green]")
+                        except Exception as e:
+                            console.print(f"[bold red]Error initializing RAG:[/] {e}")
+                            rag_retriever = None
+                    continue
+                
+                elif command == "update":
+                    if not rag_retriever:
+                        console.print("[bold red]Error:[/] RAG is not initialized. Use `/rag init` first.")
+                        continue
+                    with console.status("[bold yellow]Re-indexing project for RAG...[/]"):
+                        try:
+                            rag_retriever.index_project()
+                        except Exception as e:
+                            console.print(f"[bold red]Error updating RAG index:[/] {e}")
+                    continue
+
+                elif command == "deinit":
+                    rag_retriever = None
+                    console.print("[bold green]RAG has been deactivated for this session.[/bold green]")
+                    continue
+                
+                else:
+                    console.print("[bold red]Error:[/] Invalid RAG command. Use `/rag init`, `/rag update`, or `/rag deinit`.")
+                    continue
             elif user_input.lower() == "/yolo":
                 yolo_mode = not yolo_mode
                 status = "[bold green]ON[/]" if yolo_mode else "[bold red]OFF[/]"
@@ -799,7 +850,22 @@ def start_interactive_session(initial_prompt, cfg):
                 console.print(f"[bold red]Error:[/] Unknown command '{user_input.split()[0]}'. Type /help for a list of commands.")
                 continue
 
-            messages.append({"role": "user", "content": user_input})
+            final_user_prompt = user_input
+            if rag_retriever:
+                with console.status("[bold cyan]Searching RAG index...[/]"):
+                    rag_context = rag_retriever.query(user_input)
+                
+                if rag_context and "No relevant context" not in rag_context:
+                    console.print(Panel(rag_context, title="[bold cyan]Retrieved Context[/]", border_style="cyan", expand=False))
+                    final_user_prompt = (
+                        "Use the following code context to answer my question.\n\n"
+                        "### Context\n"
+                        f"{rag_context}\n\n"
+                        "### My Question\n"
+                        f"{user_input}"
+                    )
+
+            messages.append({"role": "user", "content": final_user_prompt})
             try:
                 process_llm_turn(messages, read_files_in_session, cfg, agent_mode, yolo_mode=yolo_mode)
             except Exception as e:

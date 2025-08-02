@@ -46,8 +46,9 @@ def _get_provider_models() -> dict:
         if not isinstance(model_info, dict) or model_key == "litellm_spec":
             continue
 
-        # Filter for chat models only
-        if model_info.get("mode") != "chat":
+        # Filter for chat or embedding models only
+        model_mode = model_info.get("mode")
+        if model_mode not in ["chat", "embedding"]:
             continue
 
         provider = model_info.get("litellm_provider")
@@ -75,6 +76,7 @@ def _get_provider_models() -> dict:
             provider_models_info[provider][model_name] = {
                 "supports_function_calling": supports_function_calling,
                 "supports_system_message": supports_system_message,
+                "mode": model_mode,
             }
 
     # Sort model names for consistent display
@@ -227,6 +229,99 @@ def _prompt_for_compression_config(config_to_edit: dict, provider_models: dict, 
             # If config is incomplete, remove it to keep config clean
             if not comp_cfg.get("provider") or not comp_cfg.get("model"):
                 config_to_edit.pop("compression", None)
+            break
+
+def _prompt_for_embedding_config(config_to_edit: dict, provider_models: dict):
+    """Interactively prompts for embedding model configuration."""
+    console = Console()
+    
+    # Filter providers to only those that have at least one embedding model
+    all_providers = sorted([
+        p for p, models in provider_models.items()
+        if any(m.get("mode") == "embedding" for m in models.values())
+    ])
+
+    # Work on a specific slice of the config
+    emb_cfg = config_to_edit.setdefault("embedding", {})
+    # Keep a backup to revert if user cancels
+    original_emb_cfg = json.loads(json.dumps(emb_cfg))
+
+    while True:
+        console.clear()
+
+        provider = emb_cfg.get("provider")
+        model = emb_cfg.get("model", "Not set")
+
+        config_view_content = (
+            f"[bold cyan]Provider:[/bold cyan] {provider or 'Not set'}\n"
+            f"[bold cyan]Model:[/bold cyan] {model}"
+        )
+        console.print(Panel(config_view_content, title="[bold green]Configuring Embedding Model[/]", expand=False))
+
+        menu_items = [
+            "1. Select Provider",
+            "2. Edit Model",
+            None,
+            "3. Back (Save Changes)",
+            "4. Back (Discard Changes)",
+        ]
+
+        terminal_menu = TerminalMenu(
+            menu_items,
+            title="Use UP/DOWN keys to navigate, ENTER to select.",
+            menu_cursor="> ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_green", "fg_black"),
+        )
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 4:  # Discard and Back
+            config_to_edit["embedding"] = original_emb_cfg
+            if not config_to_edit["embedding"]:
+                config_to_edit.pop("embedding", None)
+            break
+        
+        if selected_index == 0:  # Select Provider
+            if not all_providers:
+                console.print("\n[yellow]Could not determine any providers with embedding models.[/yellow]")
+                console.input("Press Enter to continue...")
+                continue
+            provider_menu = TerminalMenu(all_providers, title="Select a provider")
+            sel_provider_idx = provider_menu.show()
+            if sel_provider_idx is not None:
+                new_provider = all_providers[sel_provider_idx]
+                if emb_cfg.get("provider") != new_provider:
+                    emb_cfg.pop("model", None)
+                emb_cfg["provider"] = new_provider
+            continue
+
+        elif selected_index == 1:  # Edit Model
+            provider = emb_cfg.get("provider")
+            if not provider:
+                console.print("\n[yellow]Please select a provider first.[/yellow]")
+                console.input("Press Enter to continue...")
+                continue
+            
+            models_for_provider = [
+                name for name, info in provider_models.get(provider, {}).items()
+                if info.get("mode") == "embedding"
+            ]
+
+            if not models_for_provider:
+                console.print(f"\n[yellow]No embedding models found for '{provider}'. Enter one manually.[/yellow]")
+                new_model = console.input(f"Enter embedding model for {provider}: ").strip()
+            else:
+                model_menu = TerminalMenu(models_for_provider, title=f"Select an embedding model for {provider}")
+                sel_model_idx = model_menu.show()
+                new_model = models_for_provider[sel_model_idx] if sel_model_idx is not None else None
+            
+            if new_model:
+                emb_cfg["model"] = new_model
+            continue
+
+        elif selected_index == 3:  # Save and Back
+            if not emb_cfg.get("provider") or not emb_cfg.get("model"):
+                config_to_edit.pop("embedding", None)
             break
 
 def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: dict, all_providers: list):
@@ -451,14 +546,23 @@ def prompt_for_config() -> dict:
             display_model = f"{provider}/{model}{source}" if provider and model else "Not Configured"
             menu_items.append(f"{mode_name.capitalize():<15} ({display_model})")
         
-        # Add Compression config option
         menu_items.append(None)
+        
+        # Add Compression config option
         comp_cfg = config_to_edit.get("compression", {})
         comp_provider = comp_cfg.get("provider")
         comp_model = comp_cfg.get("model")
         comp_display = f"{comp_provider}/{comp_model}" if comp_provider and comp_model else "Not Configured"
         compression_item_text = f"Compression       ({comp_display})"
         menu_items.append(compression_item_text)
+
+        # Add Embedding config option
+        emb_cfg = config_to_edit.get("embedding", {})
+        emb_provider = emb_cfg.get("provider")
+        emb_model = emb_cfg.get("model")
+        emb_display = f"{emb_provider}/{emb_model}" if emb_provider and emb_model else "Not Configured"
+        embedding_item_text = f"Embedding (RAG)   ({emb_display})"
+        menu_items.append(embedding_item_text)
 
         save_item_text = "Save and Exit"
         exit_item_text = "Exit without Saving"
@@ -495,5 +599,7 @@ def prompt_for_config() -> dict:
             _prompt_for_one_mode(config_to_edit, selected_mode, provider_models, all_providers)
         elif selected_item_text == compression_item_text:
             _prompt_for_compression_config(config_to_edit, provider_models, all_providers)
+        elif selected_item_text == embedding_item_text:
+            _prompt_for_embedding_config(config_to_edit, provider_models)
             
             # The loop will now continue, re-rendering the main menu
