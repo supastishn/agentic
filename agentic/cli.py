@@ -60,14 +60,16 @@ CODE_SYSTEM_PROMPT = (
     "2. **Gather Context:** If memories are insufficient, use `ReadFolder` to see the project layout. Then, use `ReadFile` on the most relevant files to understand how the code works.\n"
     "3. **Think & Plan:** Use the `Think` tool to break down the problem, formulate a hypothesis, and create a step-by-step plan. This is a crucial step for complex tasks.\n"
     "4. **Ask for Feedback (if needed):** If the plan is complex or you are unsure about the best approach, use the `UserInput` tool to ask for clarification or confirmation before proceeding.\n"
-    "5. **Analyze & Execute:** Based on your plan, use `SearchText`, `Edit`, `WriteFile`, or `Shell` to execute the steps.\n"
-    "6. **Consult Web:** Use `WebFetch` if you need external information.\n"
-    "7. **Finish:** Once the task is complete, call `EndTask` with a `reason` of 'success' and `info` summarizing your work. If you cannot complete the task, call `EndTask` with 'failure' and explain why.\n\n"
+    "5. **Analyze & Execute:** Based on your plan, use `SearchText`, `Edit`, `WriteFile`, or `Git` to execute the steps. Make commits often.\n"
+    "6. **Verify Changes:** After making changes, use `Git` with `diff` to analyze what you've done and to help debug any issues.\n"
+    "7. **Consult Web:** Use `WebFetch` if you need external information.\n"
+    "8. **Finish:** Once the task is complete, call `EndTask` with a `reason` of 'success' and `info` summarizing your work. If you cannot complete the task, call `EndTask` with 'failure' and explain why.\n\n"
     "**Tool Guidelines:**\n"
     "- `Think`: Use this to externalize your thought process. It helps you structure your plan and analyze information before taking action.\n"
     "- `UserInput`: Use this to ask for feedback, clarification, or the next feature to implement. Essential for interactive development.\n"
     "- `WriteFile`: Creates a new file or completely overwrites an existing one. Use with caution.\n"
     "- `Edit`: Performs a targeted search-and-replace. This is safer for small changes.\n"
+    "- `Git`: Use this to manage version control. `add` and `commit` changes frequently. Use `diff` to review your work and `log` to see history.\n"
     "- `Shell`: Executes shell commands. Powerful but dangerous. Use it only when necessary.\n"
     "- `EndTask`: You MUST call this tool to signal you have finished your task. Provide a clear reason ('success' or 'failure') and a summary of your work in the 'info' field.\n\n"
     "Always use relative paths. Be methodical. Think step by step."
@@ -282,7 +284,7 @@ def _should_add_to_history(text: str):
 
 def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo_mode: bool = False, is_sub_agent: bool = False):
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
-    DANGEROUS_TOOLS = {"WriteFile", "Edit", "Shell"}
+    DANGEROUS_TOOLS = {"WriteFile", "Edit", "Shell", "Git"}
     available_tools_metadata = _get_available_tools(agent_mode, is_sub_agent, cfg)
 
     # Get model and API key, falling back to global settings
@@ -800,15 +802,30 @@ def start_interactive_session(initial_prompt, cfg):
                         conversation_text_parts.append(f"Tool ({tool_name}):\n{tool_content}")
                 
                 conversation_for_summary = "\n\n".join(conversation_text_parts)
+
+                # Get recent git commits to add to the context
+                git_log_output = ""
+                try:
+                    git_log_raw = tools.shell("git log -n 5 --pretty=format:'%h - %s (%cr)'")
+                    if "STDOUT" in git_log_raw:
+                        log_match = re.search(r'STDOUT:\n(.*?)\nSTDERR:', git_log_raw, re.DOTALL)
+                        if log_match and log_match.group(1).strip():
+                            git_log_output = log_match.group(1).strip()
+                except Exception:
+                    pass # Ignore if git log fails
                 
                 summary_prompt = (
                     "You are a summarization expert. Your task is to create a concise summary of the following "
                     "conversation between a user and an AI assistant. Focus on the key information, decisions made, "
-                    "code written or modified, and the overall progress of the task. The summary will be used to "
-                    "provide context for a new session, so it should be self-contained and easy to understand.\n\n"
+                    "code written or modified, and the overall progress of the task. If available, also mention relevant recent git commits.\n\n"
                     "## Conversation to Summarize\n\n"
                     f"{conversation_for_summary}"
                 )
+
+                if git_log_output:
+                    summary_prompt += f"\n\n## Recent Git Commits\n\n{git_log_output}"
+
+                summary_prompt += "\n\nYour summary should be self-contained and easy to understand for providing context in a new session."
                 
                 try:
                     with console.status("[bold yellow]Compressing conversation...[/]"):

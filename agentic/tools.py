@@ -142,6 +142,34 @@ def edit(path: str, search: str, replace: str) -> str:
     except Exception as e:
         return f"Error editing file {path}: {e}"
 
+def git(command: str) -> str:
+    """
+    Runs a git command. Only a subset of commands are allowed.
+    Allowed commands: rm, add, commit, diff, log.
+    Example: Git(command="commit -m 'Initial commit'")
+    """
+    command_parts = command.strip().split()
+    subcommand = command_parts[0] if command_parts else ""
+
+    allowed_subcommands = {"rm", "add", "commit", "diff", "log"}
+    if subcommand not in allowed_subcommands:
+        return f"Error: git subcommand '{subcommand}' is not allowed. Allowed are: {', '.join(allowed_subcommands)}"
+
+    full_command = f"git {command}"
+    
+    try:
+        result = subprocess.run(
+            full_command, shell=True, text=True, capture_output=True, check=False,
+        )
+        output = f"Exit Code: {result.returncode}\n"
+        if result.stdout:
+            output += f"STDOUT:\n{result.stdout}\n"
+        if result.stderr:
+            output += f"STDERR:\n{result.stderr}\n"
+        return output
+    except Exception as e:
+        return f"Error running command '{full_command}': {e}"
+
 def shell(command: str) -> str:
     """Runs a shell command and returns its output (stdout and stderr)."""
     try:
@@ -247,6 +275,7 @@ AVAILABLE_TOOLS = {
     "Edit": edit,
     "EndTask": end_task,
     "FindFiles": find_files,
+    "Git": git,
     "MakeSubagent": make_subagent,
     "ReadFile": read_file,
     "ReadFolder": read_folder,
@@ -268,6 +297,7 @@ TOOLS_METADATA = [
     {"type": "function", "function": {"name": "SearchText", "description": "Searches for a text query within a single file and returns matching lines.", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "The text to search for."}, "file_path": {"type": "string", "description": "The path of the file to search in."}}, "required": ["query", "file_path"]}}},
     {"type": "function", "function": {"name": "WriteFile", "description": "Writes content to a file, creating it if it doesn't exist or overwriting it completely if it does.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file."}, "content": {"type": "string", "description": "The full content to write to the file."}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "Edit", "description": "Performs a targeted search-and-replace on a file. Safer than WriteFile for small changes. Fails if the search string is not found.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file to edit."}, "search": {"type": "string", "description": "The exact text to find in the file."}, "replace": {"type": "string", "description": "The text to replace the 'search' text with."}}, "required": ["path", "search", "replace"]}}},
+    {"type": "function", "function": {"name": "Git", "description": "Executes a git command. Allowed subcommands: rm, add, commit, diff, log. Make regular commits. Use diffs to analyze changes.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "The git command arguments (e.g., 'commit -m \\'Initial commit\\'' or 'diff')."}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "EndTask", "description": "Signals the end of the sub-agent's task with a reason and optional info. This MUST be the final tool call made by a sub-agent.", "parameters": {"type": "object", "properties": {"reason": {"type": "string", "description": "The reason for ending the task (e.g., 'success', 'failure', 'partial_success')."}, "info": {"type": "string", "description": "Optional detailed information about what was accomplished or what failed."}}, "required": ["reason"]}}},
     {"type": "function", "function": {"name": "MakeSubagent", "description": "Creates and runs a sub-agent to perform a specific task. The sub-agent runs non-interactively and returns a JSON string with 'reason' and 'info' fields detailing the outcome. Use this to delegate complex work. Forbidden modes: 'ask', 'agent-maker'.", "parameters": {"type": "object", "properties": {"mode": {"type": "string", "enum": ["code", "architect"], "description": "The mode for the sub-agent to run in."}, "prompt": {"type": "string", "description": "The specific and detailed prompt for the sub-agent's task."}}, "required": ["mode", "prompt"]}}},
     {"type": "function", "function": {"name": "Shell", "description": "Executes a shell command and returns the output. Use with caution.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "The command to execute."}}, "required": ["command"]}}},
