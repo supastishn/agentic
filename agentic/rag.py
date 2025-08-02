@@ -68,7 +68,7 @@ class CodeRAG:
                     files_to_index.append(file_path)
         return files_to_index
 
-    def index_project(self):
+    def index_project(self, batch_size: int = 100):
         """Indexes all relevant files in the project."""
         files = self._scan_files()
         if not files:
@@ -110,16 +110,19 @@ class CodeRAG:
         model = f"{self.embedding_config['provider']}/{self.embedding_config['model']}"
         api_key = self.embedding_config.get("api_key")
 
-        embeddings = litellm.embedding(
-            model=model,
-            input=documents,
-            api_key=api_key
-        ).data
-
-        embeddings_list = [e.embedding for e in embeddings]
+        # Process embeddings in batches to avoid API limits
+        embeddings_list = []
+        for i in range(0, len(documents), batch_size):
+            batch_docs = documents[i:i + batch_size]
+            with console.status(f"[yellow]Generating embeddings for batch {i//batch_size + 1}...[/]"):
+                response = litellm.embedding(
+                    model=model,
+                    input=batch_docs,
+                    api_key=api_key
+                ).data
+                embeddings_list.extend([e.embedding for e in response])
 
         # Add to ChromaDB in batches to avoid overwhelming the system
-        batch_size = 100
         for i in range(0, len(ids), batch_size):
             self.collection.add(
                 ids=ids[i:i + batch_size],

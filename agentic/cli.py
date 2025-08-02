@@ -781,6 +781,9 @@ def start_interactive_session(initial_prompt, cfg):
             elif user_input.lower().startswith("/rag"):
                 parts = user_input.lower().split()
                 command = parts[1] if len(parts) > 1 else None
+                
+                # Get batch size from config, with a default
+                batch_size = cfg.get("other_settings", {}).get("rag_batch_size", 100)
 
                 if command == "init":
                     embedding_cfg = cfg.get("embedding")
@@ -798,7 +801,7 @@ def start_interactive_session(initial_prompt, cfg):
                                 config_dir=config.CONFIG_DIR,
                                 embedding_config=embedding_cfg
                             )
-                            rag_retriever.index_project()
+                            rag_retriever.index_project(batch_size=batch_size)
                             console.print("[bold green]RAG is now active.[/bold green]")
                         except Exception as e:
                             console.print(f"[bold red]Error initializing RAG:[/] {e}")
@@ -811,7 +814,7 @@ def start_interactive_session(initial_prompt, cfg):
                         continue
                     with console.status("[bold yellow]Re-indexing project for RAG...[/]"):
                         try:
-                            rag_retriever.index_project()
+                            rag_retriever.index_project(batch_size=batch_size)
                         except Exception as e:
                             console.print(f"[bold red]Error updating RAG index:[/] {e}")
                     continue

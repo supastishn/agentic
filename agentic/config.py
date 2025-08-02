@@ -324,6 +324,61 @@ def _prompt_for_embedding_config(config_to_edit: dict, provider_models: dict):
                 config_to_edit.pop("embedding", None)
             break
 
+def _prompt_for_other_settings(config_to_edit: dict):
+    """Interactively prompts for other miscellaneous settings."""
+    console = Console()
+    
+    settings = config_to_edit.setdefault("other_settings", {})
+    # Keep a backup to revert if user cancels
+    original_settings = json.loads(json.dumps(settings))
+
+    while True:
+        console.clear()
+
+        batch_size = settings.get("rag_batch_size", 100)
+
+        config_view_content = (
+            f"[bold cyan]RAG Indexing Batch Size:[/bold cyan] {batch_size}"
+        )
+        console.print(Panel(config_view_content, title="[bold green]Other Settings[/]", expand=False))
+
+        menu_items = [
+            "1. Edit RAG Batch Size",
+            None,
+            "2. Back (Save Changes)",
+            "3. Back (Discard Changes)",
+        ]
+
+        terminal_menu = TerminalMenu(
+            menu_items,
+            title="Use UP/DOWN keys to navigate, ENTER to select.",
+            menu_cursor="> ",
+            menu_cursor_style=("fg_green", "bold"),
+            menu_highlight_style=("bg_green", "fg_black"),
+        )
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 3:  # Discard and Back
+            config_to_edit["other_settings"] = original_settings
+            if not config_to_edit["other_settings"]:
+                config_to_edit.pop("other_settings", None)
+            break
+        
+        if selected_index == 0:  # Edit RAG Batch Size
+            new_size_str = console.input("Enter new batch size (e.g., 100): ").strip()
+            try:
+                new_size = int(new_size_str)
+                if new_size <= 0:
+                    raise ValueError
+                settings["rag_batch_size"] = new_size
+            except (ValueError, TypeError):
+                console.print("\n[bold red]Invalid input. Please enter a positive whole number.[/bold red]")
+                console.input("Press Enter to continue...")
+            continue
+
+        elif selected_index == 2:  # Save and Back
+            break
+
 def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: dict, all_providers: list):
     """Interactively prompts for a single mode's configuration."""
     console = Console()
@@ -597,6 +652,10 @@ def prompt_for_config() -> dict:
         embedding_item_text = f"Embedding (RAG)   ({emb_display})"
         menu_items.append(embedding_item_text)
 
+        # Add Other Settings option
+        other_settings_item_text = "Other Settings"
+        menu_items.append(other_settings_item_text)
+
         save_item_text = "Save and Exit"
         exit_item_text = "Exit without Saving"
         menu_items.extend([None, save_item_text, exit_item_text])
@@ -634,5 +693,7 @@ def prompt_for_config() -> dict:
             _prompt_for_compression_config(config_to_edit, provider_models, all_providers)
         elif selected_item_text == embedding_item_text:
             _prompt_for_embedding_config(config_to_edit, provider_models)
+        elif selected_item_text == other_settings_item_text:
+            _prompt_for_other_settings(config_to_edit)
             
             # The loop will now continue, re-rendering the main menu
