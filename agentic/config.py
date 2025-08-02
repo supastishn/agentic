@@ -862,7 +862,9 @@ def _prompt_for_memory_auto_update(settings: dict):
         
         strategy_display = {
             "manual": "Manual (only with /memory update)",
+            "periodic": f"Every {settings.get('auto_update_prompt_interval', 'N/A')} prompts",
             "edits": f"Every {settings.get('auto_update_edit_interval', 'N/A')} edits",
+            "model": "Use weak model to decide"
         }
 
         config_view_content = f"[bold cyan]Auto-update Strategy:[/bold cyan] {strategy_display.get(strategy)}"
@@ -870,25 +872,40 @@ def _prompt_for_memory_auto_update(settings: dict):
 
         menu_items = [
             "1. Manual (only with /memory update)",
-            "2. Every X edits",
+            "2. Every X prompts",
+            "3. Every X edits",
+            "4. Use weak model to decide",
             None,
-            "3. Back (Save Changes)",
-            "4. Back (Discard Changes)",
+            "5. Back (Save Changes)",
+            "6. Back (Discard Changes)",
         ]
         
         terminal_menu = TerminalMenu(menu_items, title="Select a strategy", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 4: # Discard
+        if selected_index is None or selected_index == 6: # Discard
             settings.clear()
             settings.update(original_settings)
             break
         
         if selected_index == 0:
             settings["auto_update_strategy"] = "manual"
+            settings.pop("auto_update_prompt_interval", None)
             settings.pop("auto_update_edit_interval", None)
         elif selected_index == 1:
+            settings["auto_update_strategy"] = "periodic"
+            settings.pop("auto_update_edit_interval", None)
+            interval_str = console.input("Enter prompt interval (e.g., 5): ").strip()
+            try:
+                interval = int(interval_str)
+                if interval <= 0: raise ValueError
+                settings["auto_update_prompt_interval"] = interval
+            except (ValueError, TypeError):
+                console.print("\n[bold red]Invalid input. Please enter a positive whole number.[/bold red]")
+                console.input("Press Enter to continue...")
+        elif selected_index == 2:
             settings["auto_update_strategy"] = "edits"
+            settings.pop("auto_update_prompt_interval", None)
             interval_str = console.input("Enter edit interval (e.g., 3): ").strip()
             try:
                 interval = int(interval_str)
@@ -897,7 +914,11 @@ def _prompt_for_memory_auto_update(settings: dict):
             except (ValueError, TypeError):
                 console.print("\n[bold red]Invalid input. Please enter a positive whole number.[/bold red]")
                 console.input("Press Enter to continue...")
-        elif selected_index == 3: # Save
+        elif selected_index == 3:
+            settings["auto_update_strategy"] = "model"
+            settings.pop("auto_update_prompt_interval", None)
+            settings.pop("auto_update_edit_interval", None)
+        elif selected_index == 5: # Save
             break
 
 def _prompt_for_memory_settings(config_to_edit: dict):
@@ -915,7 +936,9 @@ def _prompt_for_memory_settings(config_to_edit: dict):
 
         strategy_display = {
             "manual": "Manual",
+            "periodic": f"Periodic ({settings.get('auto_update_prompt_interval', 'N/A')} prompts)",
             "edits": f"Edits-based ({settings.get('auto_update_edit_interval', 'N/A')} edits)",
+            "model": "Model-based"
         }
 
         config_view_content = (

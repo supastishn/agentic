@@ -899,6 +899,7 @@ def start_interactive_session(initial_prompt, cfg):
     yolo_mode = False
     rag_retriever = None
     prompt_count_since_rag_update = 0
+    prompt_count_since_memory_update = 0
     rag_update_in_progress = threading.Lock()
     memory_update_in_progress = threading.Lock()
     session_stats = {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0, "last_prompt_tokens": 0, "edit_count": 0}
@@ -1544,15 +1545,69 @@ def start_interactive_session(initial_prompt, cfg):
         # --- Memory Auto-update logic ---
         memory_settings = cfg.get("memory_settings", {})
         auto_update_strategy = memory_settings.get("auto_update_strategy")
+        
+        if auto_update_strategy:
+            run_in_background = memory_settings.get("run_in_background", False)
+            update_triggered = False
+            trigger_reason = ""
+
+            if auto_update_strategy == "periodic":
+                prompt_count_since_memory_update += 1
+                prompt_interval = memory_settings.get("auto_update_prompt_interval", 5)
+                if prompt_count_since_memory_update >= prompt_interval:
+                    update_triggered = True
+                    trigger_reason = "prompt interval"
+                    prompt_count_since_memory_update = 0
+
+            elif auto_update_strategy == "edits":
+                edit_count = session_stats.get("edit_count", 0)
+                edit_interval = memory_settings.get("auto_update_edit_interval", 3)
+                if edit_count >= edit_interval:
+                    update_triggered = True
+                    trigger_reason = "edit interval"
+                    session_stats["edit_count"] = 0
             
-        if auto_update_strategy == "edits":
-            edit_count = session_stats.get("edit_count", 0)
-            edit_interval = memory_settings.get("auto_update_edit_interval", 3)
-            if edit_count >= edit_interval:
-                console.print("[bold cyan]Memory auto-update triggered by edit interval.[/bold cyan]")
-                run_in_background = memory_settings.get("run_in_background", False)
+            if update_triggered:
+                console.print(f"[bold cyan]Memory auto-update triggered by {trigger_reason}.[/bold cyan]")
                 _run_memory_update(cfg, memory_update_in_progress, run_in_background)
-                session_stats["edit_count"] = 0 # Reset counter
+
+            elif auto_update_strategy == "model":
+                weak_model_cfg = cfg.get("weak_model", {})
+                provider = weak_model_cfg.get("provider")
+                model_name = weak_model_cfg.get("model")
+
+                if not provider or not model_name:
+                    console.print("[bold yellow]Warning:[/] Memory auto-update by model is enabled, but no weak model is configured. Skipping.")
+                else:
+                    git_diff_output = tools.shell("git diff HEAD")
+                    is_git_repo = "Not a git repository" not in git_diff_output and "fatal:" not in git_diff_output
+                    if is_git_repo:
+                        stdout_match = re.search(r'STDOUT:\n(.*?)\nSTDERR:', git_diff_output, re.DOTALL)
+                        has_changes = stdout_match and stdout_match.group(1).strip()
+                        if has_changes:
+                            update_check_prompt = (
+                                "You are an AI assistant that determines if project memories need to be updated based on file changes. "
+                                "Given the following `git diff`, respond with `<update>true</update>` if the changes are significant enough to warrant re-generating project memories, or `<update>false</update>` otherwise. "
+                                "Consider changes to source code, configurations, or documentation as significant. Ignore trivial changes like whitespace.\n\n"
+                                f"```diff\n{stdout_match.group(1)}\n```"
+                            )
+                            try:
+                                with console.status("[bold yellow]Asking weak model about memory update...[/]"):
+                                    api_key = _find_api_key_for_provider(cfg, provider)
+                                    model_to_use = f"{provider}/{model_name}"
+                                    response = litellm.completion(
+                                        model=model_to_use,
+                                        api_key=api_key,
+                                        messages=[{"role": "user", "content": update_check_prompt}],
+                                        search=False,
+                                    )
+                                    response_content = response.choices[0].message.content
+                                
+                                if "<update>true</update>" in response_content:
+                                    console.print("[bold cyan]Memory auto-update triggered by weak model.[/bold cyan]")
+                                    _run_memory_update(cfg, memory_update_in_progress, run_in_background)
+                            except Exception as e:
+                                console.print(f"[bold red]Error checking for memory update with weak model:[/] {e}")
     
     console.print("\n[bold yellow]Exiting interactive mode.[/]")
     # Restore original environment variable on exit
