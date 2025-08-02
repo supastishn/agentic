@@ -716,6 +716,34 @@ def _prompt_for_tools_settings(config_to_edit: dict):
         elif selected_index == 3:
             break
 
+def _prompt_for_other_settings(config_to_edit: dict):
+    """Shows a submenu for RAG, Memory, and Tools settings."""
+    console = Console()
+    while True:
+        console.clear()
+        console.print(Panel("Select a category to configure.", title="[bold green]Other Settings[/]", expand=False))
+
+        menu_items = [
+            "1. RAG Settings",
+            "2. Memory Settings",
+            "3. Tools Settings",
+            None,
+            "4. Back to Main Menu",
+        ]
+
+        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 4:
+            break
+        elif selected_index == 0:
+            _prompt_for_rag_settings(config_to_edit)
+        elif selected_index == 1:
+            _prompt_for_memory_settings(config_to_edit)
+        elif selected_index == 2:
+            _prompt_for_tools_settings(config_to_edit)
+
+
 def prompt_for_config() -> dict:
     """Interactively prompts the user to select a mode and then configure it."""
     console = Console()
@@ -765,12 +793,8 @@ def prompt_for_config() -> dict:
         menu_items.append(embedding_item_text)
 
         menu_items.append(None)
-        rag_settings_item_text = "Settings: RAG"
-        menu_items.append(rag_settings_item_text)
-        memory_settings_item_text = "Settings: Memory"
-        menu_items.append(memory_settings_item_text)
-        tools_settings_item_text = "Settings: Tools"
-        menu_items.append(tools_settings_item_text)
+        other_settings_item_text = "Other Settings..."
+        menu_items.append(other_settings_item_text)
 
         save_item_text = "Save and Exit"
         exit_item_text = "Exit without Saving"
@@ -808,9 +832,5 @@ def prompt_for_config() -> dict:
             _prompt_for_compression_config(config_to_edit, provider_models, all_providers)
         elif selected_item_text == embedding_item_text:
             _prompt_for_embedding_config(config_to_edit, provider_models)
-        elif selected_item_text == rag_settings_item_text:
-            _prompt_for_rag_settings(config_to_edit)
-        elif selected_item_text == memory_settings_item_text:
-            _prompt_for_memory_settings(config_to_edit)
-        elif selected_item_text == tools_settings_item_text:
-            _prompt_for_tools_settings(config_to_edit)
+        elif selected_item_text == other_settings_item_text:
+            _prompt_for_other_settings(config_to_edit)

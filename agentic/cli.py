@@ -630,29 +630,35 @@ def start_interactive_session(initial_prompt, cfg):
 
     # --- Auto-init logic ---
     if cfg.get("memory_settings", {}).get("auto_init_memories", False):
-        memories_active = True
-        messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
-        console.print("[bold green]Auto-initializing memories into context.[/bold green]")
+        if load_memories():
+            memories_active = True
+            messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
+            console.print("[bold green]Memories are active (found existing memory files).[/bold green]")
+        else:
+            console.print("[bold yellow]Memory auto-init is on, but no memory files were found.[/bold yellow]")
+            console.print("Use the `memory` mode or `/memory save` to create them.")
 
     if cfg.get("rag_settings", {}).get("auto_init_rag", False):
-        console.print("[bold green]Auto-initializing RAG...[/bold green]")
         embedding_cfg = cfg.get("embedding")
         if not embedding_cfg or not embedding_cfg.get("provider") or not embedding_cfg.get("model"):
-            console.print("[bold red]Error:[/] Embedding model not configured. Use `/config` to set it.")
+            console.print("[bold yellow]Warning:[/] RAG auto-init is on, but no embedding model is configured. Use `/config` to set it.")
         else:
-            batch_size = cfg.get("rag_settings", {}).get("rag_batch_size", 100)
             api_key = _find_api_key_for_provider(cfg, embedding_cfg["provider"])
             embedding_cfg["api_key"] = api_key
             try:
-                rag_retriever = CodeRAG(
+                rag_instance = CodeRAG(
                     project_path=os.getcwd(),
                     config_dir=config.CONFIG_DIR,
                     embedding_config=embedding_cfg
                 )
-                rag_retriever.index_project(batch_size=batch_size, force_reindex=False)
-                console.print("[bold green]RAG is now active.[/bold green]")
+                if rag_instance.collection.count() > 0:
+                    rag_retriever = rag_instance
+                    console.print("[bold green]RAG is active (found existing index).[/bold green]")
+                else:
+                    console.print("[bold yellow]RAG auto-init is on, but no index found for this project.[/bold yellow]")
+                    console.print("Run `/rag init` to build the index.")
             except Exception as e:
-                console.print(f"[bold red]Error auto-initializing RAG:[/] {e}")
+                console.print(f"[bold red]Error checking for RAG index:[/] {e}")
                 rag_retriever = None
     # --- End auto-init logic ---
 
