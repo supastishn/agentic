@@ -849,7 +849,8 @@ def start_interactive_session(initial_prompt, cfg):
                 rag_instance = CodeRAG(
                     project_path=os.getcwd(),
                     config_dir=config.CONFIG_DIR,
-                    embedding_config=embedding_cfg
+                    embedding_config=embedding_cfg,
+                    original_openai_api_base=original_openai_api_base
                 )
                 if rag_instance.has_index():
                     rag_retriever = rag_instance
@@ -1125,7 +1126,8 @@ def start_interactive_session(initial_prompt, cfg):
                         rag_retriever = CodeRAG(
                             project_path=os.getcwd(),
                             config_dir=config.CONFIG_DIR,
-                            embedding_config=embedding_cfg
+                            embedding_config=embedding_cfg,
+                            original_openai_api_base=original_openai_api_base
                         )
                         rag_retriever.index_project(batch_size=batch_size, force_reindex=False)
                         console.print("[bold green]RAG is now active.[/bold green]")

@@ -41,11 +41,12 @@ def _split_text(text: str, tokenizer, chunk_size=1000, chunk_overlap=100):
 class CodeRAG:
     """Manages the Retrieval-Augmented Generation for a code project."""
 
-    def __init__(self, project_path: str, config_dir: Path, embedding_config: dict):
+    def __init__(self, project_path: str, config_dir: Path, embedding_config: dict, original_openai_api_base: str | None = None):
         self.project_path = Path(project_path)
         self.project_name = self.project_path.name
         self.embedding_config = embedding_config
         self.tokenizer = _get_tokenizer()
+        self.original_openai_api_base = original_openai_api_base
 
         # Create a project-specific path for the RAG index to isolate databases
         safe_project_name = self.project_name.replace(".", "_").replace(os.sep, "_")
@@ -156,11 +157,29 @@ class CodeRAG:
         for i in range(0, len(documents), batch_size):
             batch_docs = documents[i:i + batch_size]
             with console.status(f"[yellow]Generating embeddings for batch {i//batch_size + 1}...[/]"):
-                response = litellm.embedding(
-                    model=model,
-                    input=batch_docs,
-                    api_key=api_key
-                ).data
+                # --- API base switching logic ---
+                provider = self.embedding_config.get("provider")
+                current_base = None
+                if provider == 'openai':
+                    current_base = os.environ.get("OPENAI_API_BASE")
+                    if self.original_openai_api_base is not None:
+                        os.environ["OPENAI_API_BASE"] = self.original_openai_api_base
+                    elif "OPENAI_API_BASE" in os.environ:
+                        del os.environ["OPENAI_API_BASE"]
+                
+                try:
+                    response = litellm.embedding(
+                        model=model,
+                        input=batch_docs,
+                        api_key=api_key
+                    ).data
+                finally:
+                    if provider == 'openai':
+                        if current_base is not None:
+                            os.environ["OPENAI_API_BASE"] = current_base
+                        elif "OPENAI_API_BASE" in os.environ:
+                            del os.environ["OPENAI_API_BASE"]
+                # --- End API base switching ---
                 for item in response:
                     try:
                         # Try to access as an object attribute
@@ -193,36 +212,54 @@ class CodeRAG:
         model = f"{self.embedding_config['provider']}/{self.embedding_config['model']}"
         api_key = self.embedding_config.get("api_key")
         
-        response_item = litellm.embedding(model=model, input=[text], api_key=api_key).data[0]
-        
-        try:
-            # Try to access as an object attribute
-            query_embedding = response_item.embedding
-        except AttributeError:
-            # If that fails, try as a dictionary key
-            try:
-                query_embedding = response_item["embedding"]
-            except (KeyError, TypeError):
-                console.print(
-                    "[bold red]Error: Could not find 'embedding' in the query response item.[/bold red]"
-                )
-                console.print("Offending item:")
-                console.print(response_item)
-                raise ValueError("Invalid embedding response format from API for query.")
-        
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_results
-        )
+        # --- API base switching logic ---
+        provider = self.embedding_config.get("provider")
+        current_base = None
+        if provider == 'openai':
+            current_base = os.environ.get("OPENAI_API_BASE")
+            if self.original_openai_api_base is not None:
+                os.environ["OPENAI_API_BASE"] = self.original_openai_api_base
+            elif "OPENAI_API_BASE" in os.environ:
+                del os.environ["OPENAI_API_BASE"]
 
-        context_parts = []
-        sources_seen = set()
-        if results and results.get("documents"):
-            for i, doc in enumerate(results["documents"][0]):
-                source = results["metadatas"][0][i]["source"]
-                if source not in sources_seen:
-                    context_parts.append(f"----- From: {source} -----")
-                    sources_seen.add(source)
-                context_parts.append(doc)
-        
-        return "\n\n".join(context_parts) if context_parts else "No relevant context found in the index."
+        try:
+            response_item = litellm.embedding(model=model, input=[text], api_key=api_key).data[0]
+            
+            try:
+                # Try to access as an object attribute
+                query_embedding = response_item.embedding
+            except AttributeError:
+                # If that fails, try as a dictionary key
+                try:
+                    query_embedding = response_item["embedding"]
+                except (KeyError, TypeError):
+                    console.print(
+                        "[bold red]Error: Could not find 'embedding' in the query response item.[/bold red]"
+                    )
+                    console.print("Offending item:")
+                    console.print(response_item)
+                    raise ValueError("Invalid embedding response format from API for query.")
+            
+            results = self.collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_results
+            )
+
+            context_parts = []
+            sources_seen = set()
+            if results and results.get("documents"):
+                for i, doc in enumerate(results["documents"][0]):
+                    source = results["metadatas"][0][i]["source"]
+                    if source not in sources_seen:
+                        context_parts.append(f"----- From: {source} -----")
+                        sources_seen.add(source)
+                    context_parts.append(doc)
+            
+            return "\n\n".join(context_parts) if context_parts else "No relevant context found in the index."
+
+        finally:
+            if provider == 'openai':
+                if current_base is not None:
+                    os.environ["OPENAI_API_BASE"] = current_base
+                elif "OPENAI_API_BASE" in os.environ:
+                    del os.environ["OPENAI_API_BASE"]
