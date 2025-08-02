@@ -16,6 +16,7 @@ setup(
         "chromadb",
         "cryptography",
         "litellm",
+        "pathspec",
         "prompt-toolkit",
         "python-dotenv",
         "requests",

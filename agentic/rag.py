@@ -2,6 +2,7 @@ import os
 import litellm
 import tiktoken
 import chromadb
+import pathspec
 from pathlib import Path
 from rich.console import Console
 
@@ -14,10 +15,11 @@ INCLUDE_EXTENSIONS = {
     "Dockerfile", ".sh", ".ps1", ".txt"
 }
 
-# These directories and files will be ignored
+# These directories and files will be ignored by default, in addition to .gitignore rules
 IGNORE_PATTERNS = {
     ".git", "__pycache__", "node_modules", "dist", "build", "target",
-    ".venv", "venv", "env", ".env", "poetry.lock", "package-lock.json"
+    ".venv", "venv", "env", ".env", "poetry.lock", "package-lock.json",
+    ".agenticignore" # This file is for patterns, not to be indexed itself
 }
 
 def _get_tokenizer():
@@ -60,18 +62,46 @@ class CodeRAG:
         return self.collection.count() > 0
 
     def _scan_files(self) -> list[Path]:
-        """Scans the project directory for files to index."""
+        """Scans the project directory for files to index, respecting .gitignore and .agenticignore."""
+        ignore_patterns = []
+        # Add default ignore patterns
+        ignore_patterns.extend(list(IGNORE_PATTERNS))
+        
+        gitignore_path = self.project_path / ".gitignore"
+        agenticignore_path = self.project_path / ".agenticignore"
+
+        if gitignore_path.is_file():
+            with gitignore_path.open("r", encoding="utf-8") as f:
+                ignore_patterns.extend(f.readlines())
+        
+        if agenticignore_path.is_file():
+            with agenticignore_path.open("r", encoding="utf-8") as f:
+                ignore_patterns.extend(f.readlines())
+
+        spec = pathspec.PathSpec.from_lines('gitwildmatch', ignore_patterns)
+        
         files_to_index = []
-        for root, dirs, files in os.walk(self.project_path):
-            # Remove ignored directories from traversal
-            dirs[:] = [d for d in dirs if d not in IGNORE_PATTERNS]
+        for root, dirs, files in os.walk(self.project_path, topdown=True):
+            root_path = Path(root)
             
-            for file in files:
-                if file in IGNORE_PATTERNS:
+            # Create relative paths for filtering
+            rel_dirs = [root_path.joinpath(d).relative_to(self.project_path) for d in dirs]
+            rel_files = [root_path.joinpath(f).relative_to(self.project_path) for f in files]
+
+            # Filter directories in-place
+            ignored_dirs = set(spec.match_files(rel_dirs))
+            dirs[:] = [d for d, rel_d in zip(dirs, rel_dirs) if rel_d not in ignored_dirs]
+
+            # Filter files
+            ignored_files = set(spec.match_files(rel_files))
+            for file_name, rel_file_path in zip(files, rel_files):
+                if rel_file_path in ignored_files:
                     continue
-                file_path = Path(root) / file
+                
+                file_path = root_path / file_name
                 if file_path.suffix in INCLUDE_EXTENSIONS or file_path.name in INCLUDE_EXTENSIONS:
                     files_to_index.append(file_path)
+
         return files_to_index
 
     def index_project(self, batch_size: int = 100, force_reindex: bool = False):

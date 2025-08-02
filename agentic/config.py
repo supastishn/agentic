@@ -8,6 +8,8 @@ from cryptography.fernet import Fernet
 from rich.console import Console
 from rich.panel import Panel
 from simple_term_menu import TerminalMenu
+from prompt_toolkit import prompt
+from prompt_toolkit.history import InMemoryHistory
 
 def _get_provider_models() -> dict:
     """Gets available chat models from LiteLLM JSON, caches them, and groups them by provider."""
@@ -913,6 +915,42 @@ def _prompt_for_tools_settings(config_to_edit: dict):
         elif selected_index == 3:
             break
 
+def _prompt_for_custom_instructions(config_to_edit: dict):
+    """Interactively prompts for global custom instructions."""
+    console = Console()
+    history = InMemoryHistory()
+    
+    current_instructions = config_to_edit.get("custom_instructions", "")
+
+    while True:
+        console.clear()
+        console.print(Panel(current_instructions or "[dim]No custom instructions set.[/dim]", title="[bold green]Current Custom Instructions[/]", expand=False, width=100))
+        
+        console.print("\nEnter new instructions below. Press [bold]ESC[/] followed by [bold]Enter[/] to save and exit.")
+        console.print("To clear instructions, save an empty input. To cancel, press [bold]Ctrl+C[/].")
+        
+        try:
+            new_instructions = prompt(
+                "> ",
+                default=current_instructions,
+                multiline=True,
+                history=history,
+                prompt_continuation="  "
+            )
+            
+            if new_instructions != current_instructions:
+                config_to_edit["custom_instructions"] = new_instructions
+                console.print("\n[bold green]✔ Custom instructions updated.[/bold green]")
+            else:
+                console.print("\n[yellow]No changes made.[/yellow]")
+            
+            console.input("Press Enter to return to settings...")
+            break
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[yellow]Cancelled.[/yellow]")
+            console.input("Press Enter to return to settings...")
+            break
+
 def _prompt_for_other_settings(config_to_edit: dict):
     """Shows a submenu for various settings."""
     console = Console()
@@ -921,23 +959,26 @@ def _prompt_for_other_settings(config_to_edit: dict):
         console.print(Panel("Select a category to configure.", title="[bold green]Other Settings[/]", expand=False))
 
         menu_items = [
-            "1. RAG Settings",
-            "2. Memory Settings",
-            "3. Tools Settings",
+            "1. Custom Instructions",
+            "2. RAG Settings",
+            "3. Memory Settings",
+            "4. Tools Settings",
             None,
-            "4. Back to Main Menu",
+            "5. Back to Main Menu",
         ]
 
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 4:
+        if selected_index is None or selected_index == 5:
             break
         elif selected_index == 0:
-            _prompt_for_rag_settings(config_to_edit)
+            _prompt_for_custom_instructions(config_to_edit)
         elif selected_index == 1:
-            _prompt_for_memory_settings(config_to_edit)
+            _prompt_for_rag_settings(config_to_edit)
         elif selected_index == 2:
+            _prompt_for_memory_settings(config_to_edit)
+        elif selected_index == 3:
             _prompt_for_tools_settings(config_to_edit)
 
 

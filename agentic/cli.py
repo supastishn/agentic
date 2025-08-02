@@ -254,11 +254,15 @@ def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
 
     memories = load_memories()
     system_prompt_template = SYSTEM_PROMPTS.get(mode, CODE_SYSTEM_PROMPT)
+    custom_instructions = cfg.get("custom_instructions", "")
     
     system_prompt_parts = []
     if tool_strategy == "xml":
         available_tools = _get_available_tools(mode, is_sub_agent=True, cfg=cfg)
         system_prompt_parts.append(generate_xml_tool_prompt(available_tools))
+
+    if custom_instructions:
+        system_prompt_parts.append(f"### CUSTOM INSTRUCTIONS ###\n{custom_instructions}")
 
     if memories:
         system_prompt_parts.append(f"### PERMANENT MEMORIES ###\n{memories}")
@@ -569,6 +573,7 @@ def display_help():
 |--------------------------|------------------------------------------------------------------|
 | `/help`                  | Show this help message.                                          |
 | `/config`                | Open the configuration menu.                                     |
+| `/scaffold <prompt>`     | Creates a new project structure based on a description.          |
 | `/load_preset <name>`    | Load a saved configuration preset.                               |
 | `/mode <name>`           | Switch agent mode (code, ask, architect).                        |
 | `/clear`                 | Clears the current conversation context.                         |
@@ -663,11 +668,15 @@ def start_interactive_session(initial_prompt, cfg):
             memories = load_memories()
 
         system_prompt_template = SYSTEM_PROMPTS[mode]
+        custom_instructions = current_cfg.get("custom_instructions", "")
         
         system_prompt_parts = []
         if tool_strategy == "xml":
             available_tools = _get_available_tools(mode, is_sub_agent=False, cfg=current_cfg)
             system_prompt_parts.append(generate_xml_tool_prompt(available_tools))
+
+        if custom_instructions:
+            system_prompt_parts.append(f"### CUSTOM INSTRUCTIONS ###\n{custom_instructions}")
 
         if memories:
             system_prompt_parts.append(f"### PERMANENT MEMORIES ###\n{memories}")
@@ -1150,6 +1159,61 @@ def start_interactive_session(initial_prompt, cfg):
                 continue
             elif user_input.lower() in ["/exit", "exit"]:
                 break
+            elif user_input.lower().startswith("/scaffold"):
+                parts = user_input.strip().split(maxsplit=1)
+                if len(parts) < 2 or not parts[1]:
+                    console.print("[bold red]Usage: /scaffold <a description of the project to build>[/]")
+                    continue
+                
+                scaffold_prompt = parts[1]
+
+                # --- Step 1: Run Architect ---
+                console.print(Panel(f"Running architect to design project structure for: '{scaffold_prompt}'", title="[bold blue]Scaffold Step 1: Architect[/]", border_style="blue"))
+                architect_prompt = (
+                    "Based on the following user request, create a detailed, step-by-step plan for a new software project. "
+                    "Your plan should describe the directory structure and the purpose of each file to be created. Do NOT write implementation code. "
+                    "Your final output MUST be just the plan, which will be passed to a coding agent.\n\n"
+                    f"USER REQUEST: {scaffold_prompt}"
+                )
+                
+                architect_result_json = run_sub_agent("architect", architect_prompt, cfg)
+                try:
+                    architect_result = json.loads(architect_result_json)
+                    if architect_result.get("reason") != "success":
+                        console.print(Panel(f"Architect agent failed.\nReason: {architect_result.get('reason')}\nInfo: {architect_result.get('info')}", title="[bold red]Scaffold Failed[/]", border_style="red"))
+                        continue
+                    
+                    coding_plan = architect_result.get("info")
+                    if not coding_plan:
+                        console.print(Panel("Architect agent did not return a plan.", title="[bold red]Scaffold Failed[/]", border_style="red"))
+                        continue
+                except (json.JSONDecodeError, AttributeError) as e:
+                    console.print(Panel(f"Could not parse architect agent output: {e}\nOutput: {architect_result_json}", title="[bold red]Scaffold Failed[/]", border_style="red"))
+                    continue
+
+                # --- Step 2: Run Coder ---
+                console.print(Panel(coding_plan, title="[bold blue]Scaffold Step 2: Coder - Received Plan[/]", border_style="blue"))
+                if not Confirm.ask("[bold yellow]The architect has created the above plan. Proceed with generating the code?[/]"):
+                    console.print("[yellow]Scaffolding cancelled.[/yellow]")
+                    continue
+
+                code_prompt = (
+                    "You are a coding agent tasked with scaffolding a new project. Based on the following plan from an architect, create the specified directories and files with the described content. "
+                    "Make sure to create a complete, runnable starting point for the project.\n\n"
+                    f"ARCHITECT'S PLAN:\n{coding_plan}"
+                )
+                
+                code_result_json = run_sub_agent("code", code_prompt, cfg)
+                try:
+                    code_result = json.loads(code_result_json)
+                    if code_result.get("reason") == "success":
+                        console.print(Panel(f"Coding agent finished successfully.\nInfo: {code_result.get('info')}", title="[bold green]Scaffold Complete[/]", border_style="green"))
+                    else:
+                        console.print(Panel(f"Coding agent failed.\nReason: {code_result.get('reason')}\nInfo: {code_result.get('info')}", title="[bold red]Scaffold Failed[/]", border_style="red"))
+                except (json.JSONDecodeError, AttributeError) as e:
+                    console.print(Panel(f"Could not parse code agent output: {e}\nOutput: {code_result_json}", title="[bold red]Scaffold Failed[/]", border_style="red"))
+                
+                continue
             elif user_input.lower() == "/config":
                 cfg = config.prompt_for_config()
                 # Reload system prompt in case settings affecting it (like tools) changed
