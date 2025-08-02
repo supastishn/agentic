@@ -568,7 +568,6 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
                 providers = mode_cfg.setdefault("providers", {})
                 providers[new_provider_key] = {
                     "model": model_name,
-                    "api_base": HACKCLUB_API_BASE,
                 }
                 # Force tool strategy and remove API key
                 mode_cfg["tool_strategy"] = "xml"

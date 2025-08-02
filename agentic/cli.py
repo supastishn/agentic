@@ -32,6 +32,23 @@ from .tools import generate_xml_tool_prompt
 
 console = Console()
 
+original_openai_api_base = os.environ.get("OPENAI_API_BASE")
+
+def _update_environment_for_mode(agent_mode: str, cfg: dict):
+    """Sets or unsets OPENAI_API_BASE based on the active mode's provider."""
+    modes = cfg.get("modes", {})
+    global_config = modes.get("global", {})
+    mode_config = modes.get(agent_mode, {})
+    active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
+
+    if active_provider == "hackclub_ai":
+        os.environ["OPENAI_API_BASE"] = "https://ai.hackclub.com"
+    else:
+        if original_openai_api_base is not None:
+            os.environ["OPENAI_API_BASE"] = original_openai_api_base
+        elif "OPENAI_API_BASE" in os.environ:
+            del os.environ["OPENAI_API_BASE"]
+
 def _update_session_stats(response, session_stats: dict, model_capabilities: dict):
     """Updates session token counts and costs from a litellm response object."""
     if not response or not response.usage:
@@ -255,7 +272,8 @@ def _get_model_info_for_mode(cfg: dict, agent_mode: str) -> tuple:
     if not model_name:
         return None, None
 
-    model_str = f"openai/{model_name}" if active_provider == "hackclub_ai" else f"{active_provider}/{model_name}"
+    provider_for_litellm = "openai" if active_provider == "hackclub_ai" else active_provider
+    model_str = f"{provider_for_litellm}/{model_name}"
     
     all_models_info = config._get_provider_models()
     lookup_provider = "openai" if active_provider == "hackclub_ai" else active_provider
@@ -360,17 +378,16 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
         
         model_name = final_provider_config.get("model")
         api_key = final_provider_config.get("api_key") # Can be None
-        api_base = final_provider_config.get("api_base") # Can be None
+        
+        # Special handling for hackclub_ai
+        provider_for_litellm = "openai" if active_provider == "hackclub_ai" else active_provider
+        api_base = None if active_provider == "hackclub_ai" else final_provider_config.get("api_base")
+
         tool_strategy = final_provider_config.get("tool_strategy", "tool_calls")
         enable_web_search = final_provider_config.get("enable_web_search", False)
         
         if model_name:
-            if active_provider == "hackclub_ai":
-                # Hackclub is an OpenAI-compatible endpoint.
-                # We tell litellm it's an 'openai' model but point to a different base URL.
-                model = f"openai/{model_name}"
-            else:
-                model = f"{active_provider}/{model_name}"
+            model = f"{provider_for_litellm}/{model_name}"
 
     if not model: # Model is required, API key is not
         console.print(f"[bold red]Error:[/] Agent mode '{agent_mode}' is not configured (or is missing a model).")
@@ -774,6 +791,7 @@ def start_interactive_session(initial_prompt, cfg):
         return "\n\n".join(filter(None, system_prompt_parts))
 
     messages = [{"role": "system", "content": get_system_prompt(agent_mode, cfg)}]
+    _update_environment_for_mode(agent_mode, cfg)
     read_files_in_session = set()
     history = InMemoryHistory()
     yolo_mode = False
@@ -1163,6 +1181,7 @@ def start_interactive_session(initial_prompt, cfg):
                 cfg.clear()
                 cfg.update(preset_data)
                 cfg["presets"] = current_presets
+                _update_environment_for_mode(agent_mode, cfg)
                 
                 # Reload system prompt as config has changed
                 messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
@@ -1231,6 +1250,7 @@ def start_interactive_session(initial_prompt, cfg):
                 parts = user_input.strip().lower().split()
                 if len(parts) == 2 and parts[1] in MODES:
                     agent_mode = parts[1]
+                    _update_environment_for_mode(agent_mode, cfg)
                     messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
                     console.print(f"Switched to [bold green]{agent_mode.capitalize()}[/bold green] mode.")
                 elif len(parts) == 1 and parts[0] == "/mode":
@@ -1297,6 +1317,7 @@ def start_interactive_session(initial_prompt, cfg):
                 continue
             elif user_input.lower() == "/config":
                 cfg = config.prompt_for_config()
+                _update_environment_for_mode(agent_mode, cfg)
                 # Reload system prompt in case settings affecting it (like tools) changed
                 messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
                 continue
@@ -1397,6 +1418,11 @@ def start_interactive_session(initial_prompt, cfg):
             break
     
     console.print("\n[bold yellow]Exiting interactive mode.[/]")
+    # Restore original environment variable on exit
+    if original_openai_api_base is not None:
+        os.environ["OPENAI_API_BASE"] = original_openai_api_base
+    elif "OPENAI_API_BASE" in os.environ:
+        del os.environ["OPENAI_API_BASE"]
 
 def main():
     """Main function for the agentic CLI tool."""
@@ -1415,7 +1441,6 @@ def main():
                         "providers": {
                             "hackclub_ai": {
                                 "model": model_name,
-                                "api_base": HACKCLUB_API_BASE,
                             }
                         },
                         "tool_strategy": "xml",
