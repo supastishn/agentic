@@ -398,6 +398,8 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         
         # --- Common Tool Execution Logic ---
         has_executed_tool = False
+        xml_tool_outputs = []
+
         for tool_call in tool_calls:
             # For XML, tool_call is a dict; for native, it's an object. Access attrs consistently.
             is_native_call = hasattr(tool_call, 'function')
@@ -426,6 +428,8 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
                     expand=False,
                 )
             )
+            
+            tool_output = "" # Initialize tool_output
 
             # SPECIAL HANDLING FOR MakeSubagent
             if tool_name == "MakeSubagent":
@@ -434,16 +438,8 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
                     prompt=tool_args["prompt"],
                     cfg=cfg
                 )
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id if is_native_call else tool_call["id"],
-                    "name": tool_name,
-                    "content": str(tool_output),
-                })
-                has_executed_tool = True
-                continue
-
-            if tool_name in DANGEROUS_TOOLS and not yolo_mode:
+            # REGULAR TOOL EXECUTION
+            elif tool_name in DANGEROUS_TOOLS and not yolo_mode:
                 if not Confirm.ask(
                     f"[bold yellow]Execute the [cyan]{tool_name}[/cyan] tool with the arguments above?[/]",
                     default=False
@@ -459,7 +455,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
                             tool_output = tool_func(**tool_args)
                     else:
                         tool_output = f"Unknown tool '{tool_name}'"
-            else:
+            else: # Not dangerous or YOLO mode is on
                 if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
                     if tool_name in ["ReadFile", "ReadManyFiles"]:
                         tool_args["read_files_in_session"] = read_files_in_session
@@ -468,17 +464,24 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
                 else:
                     tool_output = f"Unknown tool '{tool_name}'"
             
-            messages.append(
-                {
+            # --- Append tool output based on strategy ---
+            if tool_strategy == "xml":
+                xml_tool_outputs.append(f"<tool_output tool_name='{tool_name}'>\n{str(tool_output)}\n</tool_output>")
+            else: # Native tool_calls strategy
+                messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id if is_native_call else tool_call["id"],
                     "name": tool_name,
                     "content": str(tool_output),
-                }
-            )
+                })
+            
             has_executed_tool = True
 
         if has_executed_tool:
+            if tool_strategy == "xml" and xml_tool_outputs:
+                combined_output = "\n\n".join(xml_tool_outputs)
+                user_prompt = f"The tool calls produced the following output:\n\n{combined_output}\n\nBased on this, please continue with your plan."
+                messages.append({"role": "user", "content": user_prompt})
             continue
         else: # No tools were run, break to final response
             break
