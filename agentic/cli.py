@@ -437,6 +437,9 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
             choice = response.choices[0]
             response_content = choice.message.content or ""
             
+            # Some models (like qwen) add thinking tags. Strip them for cleaner output.
+            response_content = re.sub(r'<thinking-content-.*?>', '', response_content, flags=re.DOTALL)
+
             # Separate text from tool calls
             tool_xml_blocks = re.findall(r'<tool_code>(.*?)</tool_code>', response_content, re.DOTALL)
             text_content = re.sub(r'<tool_code>.*?</tool_code>', '', response_content, flags=re.DOTALL).strip()
