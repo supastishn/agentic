@@ -55,6 +55,10 @@ class CodeRAG:
             name="code-collection"
         )
 
+    def has_index(self) -> bool:
+        """Checks if the collection has any embeddings."""
+        return self.collection.count() > 0
+
     def _scan_files(self) -> list[Path]:
         """Scans the project directory for files to index."""
         files_to_index = []
@@ -72,7 +76,7 @@ class CodeRAG:
 
     def index_project(self, batch_size: int = 100, force_reindex: bool = False):
         """Indexes all relevant files in the project."""
-        if not force_reindex and self.collection.count() > 0:
+        if not force_reindex and self.has_index():
             console.print("[yellow]Existing RAG embeddings found. Skipping generation.[/yellow]")
             console.print("Use `/rag update` to force a re-index.")
             return

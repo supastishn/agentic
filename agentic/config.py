@@ -716,31 +716,37 @@ def _prompt_for_tools_settings(config_to_edit: dict):
         elif selected_index == 3:
             break
 
-def _prompt_for_other_settings(config_to_edit: dict):
-    """Shows a submenu for RAG, Memory, and Tools settings."""
+def _prompt_for_other_settings(config_to_edit: dict, provider_models: dict, all_providers: list):
+    """Shows a submenu for various settings."""
     console = Console()
     while True:
         console.clear()
         console.print(Panel("Select a category to configure.", title="[bold green]Other Settings[/]", expand=False))
 
         menu_items = [
-            "1. RAG Settings",
-            "2. Memory Settings",
-            "3. Tools Settings",
+            "1. Compression Settings",
+            "2. Embedding Model Settings",
+            "3. RAG Settings",
+            "4. Memory Settings",
+            "5. Tools Settings",
             None,
-            "4. Back to Main Menu",
+            "6. Back to Main Menu",
         ]
 
-        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
+        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 4:
+        if selected_index is None or selected_index == 6:
             break
         elif selected_index == 0:
-            _prompt_for_rag_settings(config_to_edit)
+            _prompt_for_compression_config(config_to_edit, provider_models, all_providers)
         elif selected_index == 1:
-            _prompt_for_memory_settings(config_to_edit)
+            _prompt_for_embedding_config(config_to_edit, provider_models)
         elif selected_index == 2:
+            _prompt_for_rag_settings(config_to_edit)
+        elif selected_index == 3:
+            _prompt_for_memory_settings(config_to_edit)
+        elif selected_index == 4:
             _prompt_for_tools_settings(config_to_edit)
 
 
@@ -779,20 +785,9 @@ def prompt_for_config() -> dict:
 
             display_model = f"{provider}/{model}{source}" if provider and model else "Not Configured"
             menu_items.append(f"Mode: {mode_name.capitalize():<15} ({display_model})")
-        
+    
         menu_items.append(None)
-        
-        comp_cfg = config_to_edit.get("compression", {})
-        comp_display = f"{comp_cfg.get('provider', '')}/{comp_cfg.get('model', '')}" if comp_cfg.get('provider') else "Not Configured"
-        compression_item_text = f"Feature: Compression     ({comp_display})"
-        menu_items.append(compression_item_text)
-
-        emb_cfg = config_to_edit.get("embedding", {})
-        emb_display = f"{emb_cfg.get('provider', '')}/{emb_cfg.get('model', '')}" if emb_cfg.get('provider') else "Not Configured"
-        embedding_item_text = f"Feature: Embedding Models ({emb_display})"
-        menu_items.append(embedding_item_text)
-
-        menu_items.append(None)
+    
         other_settings_item_text = "Other Settings..."
         menu_items.append(other_settings_item_text)
 
@@ -828,9 +823,5 @@ def prompt_for_config() -> dict:
         if selected_index is not None and selected_index < len(all_modes):
             selected_mode = all_modes[selected_index]
             _prompt_for_one_mode(config_to_edit, selected_mode, provider_models, all_providers)
-        elif selected_item_text == compression_item_text:
-            _prompt_for_compression_config(config_to_edit, provider_models, all_providers)
-        elif selected_item_text == embedding_item_text:
-            _prompt_for_embedding_config(config_to_edit, provider_models)
         elif selected_item_text == other_settings_item_text:
-            _prompt_for_other_settings(config_to_edit)
+            _prompt_for_other_settings(config_to_edit, provider_models, all_providers)

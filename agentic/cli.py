@@ -651,7 +651,7 @@ def start_interactive_session(initial_prompt, cfg):
                     config_dir=config.CONFIG_DIR,
                     embedding_config=embedding_cfg
                 )
-                if rag_instance.collection.count() > 0:
+                if rag_instance.has_index():
                     rag_retriever = rag_instance
                     console.print("[bold green]RAG is active (found existing index).[/bold green]")
                 else:
