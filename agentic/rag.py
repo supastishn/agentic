@@ -45,12 +45,14 @@ class CodeRAG:
         self.embedding_config = embedding_config
         self.tokenizer = _get_tokenizer()
 
-        db_path = config_dir / "data" / "rag_indices"
+        # Create a project-specific path for the RAG index to isolate databases
+        safe_project_name = self.project_name.replace(".", "_").replace(os.sep, "_")
+        db_path = config_dir / "data" / "rag_indices" / safe_project_name
         db_path.mkdir(parents=True, exist_ok=True)
         
         self.client = chromadb.PersistentClient(path=str(db_path))
         self.collection = self.client.get_or_create_collection(
-            name=self.project_name.replace(".", "_")
+            name="code-collection"
         )
 
     def _scan_files(self) -> list[Path]:
@@ -68,17 +70,22 @@ class CodeRAG:
                     files_to_index.append(file_path)
         return files_to_index
 
-    def index_project(self, batch_size: int = 100):
+    def index_project(self, batch_size: int = 100, force_reindex: bool = False):
         """Indexes all relevant files in the project."""
+        if not force_reindex and self.collection.count() > 0:
+            console.print("[yellow]Existing RAG embeddings found. Skipping generation.[/yellow]")
+            console.print("Use `/rag update` to force a re-index.")
+            return
+
+        if force_reindex and self.collection.count() > 0:
+            console.print("[yellow]Forcing re-index. Clearing old embeddings...[/yellow]")
+            self.client.delete_collection(name=self.collection.name)
+            self.collection = self.client.create_collection(name=self.collection.name)
+
         files = self._scan_files()
         if not files:
             console.print("[yellow]No files found to index.[/yellow]")
             return
-
-        # Clear existing collection for a full re-index
-        if self.collection.count() > 0:
-            self.client.delete_collection(name=self.collection.name)
-            self.collection = self.client.create_collection(name=self.collection.name)
         
         console.print(f"Found {len(files)} files to index. Generating embeddings...")
 

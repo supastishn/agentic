@@ -488,19 +488,23 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
 def display_help():
     """Displays the help menu for interactive commands."""
     help_text = """
-| Command         | Description                                                 |
-|-----------------|-------------------------------------------------------------|
-| `/help`         | Show this help message.                                     |
-| `/config`       | Open the configuration menu.                                |
-| `/yolo`         | Toggle YOLO mode (disables safety confirmations).           |
-| `/mode <name>`  | Switch agent mode (code, ask, architect).                   |
-| `/clear`        | Clears the current conversation context.                    |
-| `/compress`     | Summarizes the conversation to reduce context size.         |
-| `/rag init`     | Initialize and activate RAG for the current project.        |
-| `/rag update`   | Re-index the project files for RAG.                         |
-| `/rag deinit`   | Deactivate RAG for the current session.                     |
-| `/exit` or `exit` | Exit the interactive session.                               |
-| `! <command>`   | Execute a shell command directly from your terminal.        |
+| Command                  | Description                                                      |
+|--------------------------|------------------------------------------------------------------|
+| `/help`                  | Show this help message.                                          |
+| `/config`                | Open the configuration menu.                                     |
+| `/mode <name>`           | Switch agent mode (code, ask, architect).                        |
+| `/clear`                 | Clears the current conversation context.                         |
+| `/compress`              | Summarizes the conversation to reduce context size.              |
+| `/yolo`                  | Toggle YOLO mode (disables safety confirmations).                |
+| `/rag init`              | Initialize RAG for the project (if not already indexed).         |
+| `/rag update`            | Force re-indexing of the project files for RAG.                  |
+| `/rag deinit`            | Deactivate RAG for the current session.                          |
+| `/memory init`           | Loads memories into the current session's context.               |
+| `/memory deinit`         | Unloads memories from the current session's context.             |
+| `/memory save <text>`    | Saves text to the project's memory file.                         |
+| `/memory delete`         | Deletes all project and global memory files.                     |
+| `/exit` or `exit`        | Exit the interactive session.                                    |
+| `! <command>`            | Execute a shell command directly from your terminal.             |
 
 **Hotkeys:**
 - **Enter**: Send your message to the agent.
@@ -564,6 +568,7 @@ MODES = ["code", "ask", "architect", "agent-maker", "memory"]
 def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     agent_mode = "code"
+    memories_active = True # New state variable for memory context
 
     def get_system_prompt(mode, current_cfg):
         # Determine tool strategy from config
@@ -574,9 +579,9 @@ def start_interactive_session(initial_prompt, cfg):
         provider_cfg = {**global_cfg.get("providers", {}).get(active_provider, {}), **mode_cfg.get("providers", {}).get(active_provider, {})}
         tool_strategy = provider_cfg.get("tool_strategy", "tool_calls")
         
-        memories = load_memories()
-        if memories and agent_mode == "code": # Only show memories loaded panel once at the start
-            console.print(Panel(memories, title="[bold magenta]Memories Loaded[/]", border_style="magenta", expand=False))
+        memories = ""
+        if memories_active:
+            memories = load_memories()
 
         system_prompt_template = SYSTEM_PROMPTS[mode]
         
@@ -781,8 +786,6 @@ def start_interactive_session(initial_prompt, cfg):
             elif user_input.lower().startswith("/rag"):
                 parts = user_input.lower().split()
                 command = parts[1] if len(parts) > 1 else None
-                
-                # Get batch size from config, with a default
                 batch_size = cfg.get("other_settings", {}).get("rag_batch_size", 100)
 
                 if command == "init":
@@ -792,20 +795,18 @@ def start_interactive_session(initial_prompt, cfg):
                         continue
                     
                     api_key = _find_api_key_for_provider(cfg, embedding_cfg["provider"])
-                    embedding_cfg["api_key"] = api_key # Add key for the RAG class to use
-
-                    with console.status("[bold yellow]Initializing RAG index...[/]"):
-                        try:
-                            rag_retriever = CodeRAG(
-                                project_path=os.getcwd(),
-                                config_dir=config.CONFIG_DIR,
-                                embedding_config=embedding_cfg
-                            )
-                            rag_retriever.index_project(batch_size=batch_size)
-                            console.print("[bold green]RAG is now active.[/bold green]")
-                        except Exception as e:
-                            console.print(f"[bold red]Error initializing RAG:[/] {e}")
-                            rag_retriever = None
+                    embedding_cfg["api_key"] = api_key
+                    try:
+                        rag_retriever = CodeRAG(
+                            project_path=os.getcwd(),
+                            config_dir=config.CONFIG_DIR,
+                            embedding_config=embedding_cfg
+                        )
+                        rag_retriever.index_project(batch_size=batch_size, force_reindex=False)
+                        console.print("[bold green]RAG is now active.[/bold green]")
+                    except Exception as e:
+                        console.print(f"[bold red]Error initializing RAG:[/] {e}")
+                        rag_retriever = None
                     continue
                 
                 elif command == "update":
@@ -814,7 +815,7 @@ def start_interactive_session(initial_prompt, cfg):
                         continue
                     with console.status("[bold yellow]Re-indexing project for RAG...[/]"):
                         try:
-                            rag_retriever.index_project(batch_size=batch_size)
+                            rag_retriever.index_project(batch_size=batch_size, force_reindex=True)
                         except Exception as e:
                             console.print(f"[bold red]Error updating RAG index:[/] {e}")
                     continue
@@ -826,6 +827,57 @@ def start_interactive_session(initial_prompt, cfg):
                 
                 else:
                     console.print("[bold red]Error:[/] Invalid RAG command. Use `/rag init`, `/rag update`, or `/rag deinit`.")
+                    continue
+            elif user_input.lower().startswith("/memory"):
+                parts = user_input.strip().split(maxsplit=2)
+                command = parts[1] if len(parts) > 1 else None
+
+                if command == "save":
+                    if len(parts) < 3:
+                        console.print("[bold red]Usage: /memory save <text to remember>[/]")
+                        continue
+                    text_to_save = parts[2]
+                    result = tools.save_memory(text_to_save, scope="project")
+                    console.print(f"[bold green]Memory saved:[/bold green] {result}")
+                    if memories_active:
+                        messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
+                    continue
+
+                elif command == "delete":
+                    if Confirm.ask("[bold yellow]Are you sure you want to delete ALL project and global memories? This cannot be undone.[/]"):
+                        project_name = os.path.basename(os.getcwd())
+                        project_memory_file = config.DATA_DIR / f"{project_name}.md"
+                        global_memory_file = config.DATA_DIR / "memorys.global.md"
+                        deleted_count = 0
+                        
+                        if project_memory_file.exists():
+                            project_memory_file.unlink()
+                            deleted_count += 1
+                        if global_memory_file.exists():
+                            global_memory_file.unlink()
+                            deleted_count += 1
+                        
+                        console.print(f"[bold green]Deleted {deleted_count} memory file(s).[/bold green]")
+                        if memories_active:
+                            messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
+                    else:
+                        console.print("[yellow]Memory deletion cancelled.[/yellow]")
+                    continue
+
+                elif command == "deinit":
+                    memories_active = False
+                    messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
+                    console.print("[bold green]Memories unloaded from context for this session.[/bold green]")
+                    continue
+
+                elif command == "init":
+                    memories_active = True
+                    messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
+                    console.print("[bold green]Memories loaded into context for this session.[/bold green]")
+                    continue
+                
+                else:
+                    console.print("[bold red]Invalid memory command. Usage: /memory <save|delete|init|deinit>[/]")
                     continue
             elif user_input.lower() == "/yolo":
                 yolo_mode = not yolo_mode
