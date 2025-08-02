@@ -73,11 +73,17 @@ def _get_provider_models() -> dict:
             supports_function_calling = model_info.get("supports_function_calling", False)
             supports_system_message = model_info.get("supports_system_message", True)
             supports_web_search = model_info.get("supports_web_search", False)
+            max_input_tokens = model_info.get("max_input_tokens", None)
+            input_cost_per_token = model_info.get("input_cost_per_token", None)
+            output_cost_per_token = model_info.get("output_cost_per_token", None)
 
             provider_models_info[provider][model_name] = {
                 "supports_function_calling": supports_function_calling,
                 "supports_system_message": supports_system_message,
                 "supports_web_search": supports_web_search,
+                "max_input_tokens": max_input_tokens,
+                "input_cost_per_token": input_cost_per_token,
+                "output_cost_per_token": output_cost_per_token,
                 "mode": model_mode,
             }
 
@@ -460,10 +466,28 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
 
         model_capabilities = provider_models.get(active_provider, {}).get(model, {})
         supports_web_search = model_capabilities.get("supports_web_search", False)
+        supports_tool_calls = model_capabilities.get("supports_function_calling", False)
+
+        model_details = []
+        if model != "Not set":
+            fc = "✅" if supports_tool_calls else "❌"
+            ws = "✅" if supports_web_search else "❌"
+            model_details.append(f"Tools: {fc}, Search: {ws}")
+
+            ctx = model_capabilities.get("max_input_tokens")
+            if ctx:
+                model_details.append(f"Context: {ctx:,}")
+            
+            in_cost = model_capabilities.get("input_cost_per_token")
+            out_cost = model_capabilities.get("output_cost_per_token")
+            if in_cost is not None and out_cost is not None:
+                model_details.append(f"Cost/Mtk: ${in_cost * 1_000_000:.2f} (in), ${out_cost * 1_000_000:.2f} (out)")
+
+        model_display_str = f"{model} ({' | '.join(model_details)})" if model_details else model
 
         config_view_content = (
             f"[bold cyan]Provider:[/bold cyan] {HACKCLUB_AI_DISPLAY_NAME if is_hackclub else active_provider or 'Not set'}\n"
-            f"[bold cyan]Model:[/bold cyan] {model}\n"
+            f"[bold cyan]Model:[/bold cyan] {model_display_str}\n"
             f"[bold cyan]API Key:[/bold cyan] {api_key_display}\n"
             f"[bold cyan]Tool Strategy:[/bold cyan] {tool_strategy}"
         )
@@ -592,12 +616,24 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             
             menu_entries = [CUSTOM_MODEL_OPTION]
             for name in model_names:
-                capabilities = models_for_provider_dict.get(name, {})
-                supports_fc = capabilities.get("supports_function_calling", False)
-                if supports_fc:
-                    menu_entries.append(name)
-                else:
-                    menu_entries.append(f"{name} (tool calls not supported)")
+                caps = models_for_provider_dict.get(name, {})
+                fc = "✅" if caps.get("supports_function_calling") else "❌"
+                ws = "✅" if caps.get("supports_web_search") else "❌"
+                
+                ctx = caps.get("max_input_tokens")
+                ctx_str = f"Ctx: {ctx // 1000}k" if ctx else ""
+
+                in_cost = caps.get("input_cost_per_token")
+                out_cost = caps.get("output_cost_per_token")
+                cost_str = ""
+                if in_cost is not None and out_cost is not None:
+                    in_mtk = in_cost * 1_000_000
+                    out_mtk = out_cost * 1_000_000
+                    cost_str = f"In: ${in_mtk:.2f} Out: ${out_mtk:.2f}"
+                
+                details = ", ".join(filter(None, [ctx_str, cost_str]))
+                
+                menu_entries.append(f"{name} (Tools: {fc}, Search: {ws}, {details})")
             
             model_menu = TerminalMenu(menu_entries, title=f"Select a model for {active_provider}")
             sel_model_idx = model_menu.show()
@@ -611,7 +647,8 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
                 if custom_model:
                     new_model = custom_model
             else:
-                new_model = model_names[sel_model_idx - 1]
+                # Extract model name from "model_name (details...)"
+                new_model = menu_entries[sel_model_idx].split(" (")[0]
             
             if new_model:
                 mode_cfg["providers"].setdefault(active_provider, {})["model"] = new_model

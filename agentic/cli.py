@@ -32,6 +32,23 @@ from .tools import generate_xml_tool_prompt
 
 console = Console()
 
+def _update_session_stats(response, session_stats: dict, model_capabilities: dict):
+    """Updates session token counts and costs from a litellm response object."""
+    if not response or not response.usage:
+        return
+
+    prompt_tokens = response.usage.prompt_tokens
+    completion_tokens = response.usage.completion_tokens
+    
+    session_stats['prompt_tokens'] += prompt_tokens
+    session_stats['completion_tokens'] += completion_tokens
+
+    in_cost = model_capabilities.get("input_cost_per_token", 0) or 0
+    out_cost = model_capabilities.get("output_cost_per_token", 0) or 0
+    
+    turn_cost = (prompt_tokens * in_cost) + (completion_tokens * out_cost)
+    session_stats['cost'] += turn_cost
+
 ASCII_LOGO = r"""
 [bold green]                                         █████     ███          [/bold green]
 [bold green]                                        ░░███     ░░░           [/bold green]
@@ -255,7 +272,7 @@ def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
     try:
         # Run the agent loop. It will end by either returning a message (error)
         # or raising SubAgentEndTask (success/failure).
-        final_message = process_llm_turn(sub_messages, sub_read_files, cfg, mode, yolo_mode=False, is_sub_agent=True)
+        final_message = process_llm_turn(sub_messages, sub_read_files, cfg, mode, session_stats={}, yolo_mode=False, is_sub_agent=True)
         
         if final_message:
             output_content = final_message.get("content", "Sub-agent did not return any output.")
@@ -282,7 +299,7 @@ def _should_add_to_history(text: str):
     return True
 
 
-def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo_mode: bool = False, is_sub_agent: bool = False):
+def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, session_stats: dict, yolo_mode: bool = False, is_sub_agent: bool = False):
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
     DANGEROUS_TOOLS = {"WriteFile", "Edit", "Shell", "Git"}
     available_tools_metadata = _get_available_tools(agent_mode, is_sub_agent, cfg)
@@ -350,6 +367,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
                 tool_choice="auto",
                 search=enable_web_search,
             )
+            _update_session_stats(response, session_stats, model_capabilities)
             choice = response.choices[0]
             if choice.finish_reason != "tool_calls":
                 break # Go to final streaming response
@@ -358,6 +376,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             tool_calls = choice.message.tool_calls
         else: # xml strategy
             response = litellm.completion(model=model, api_key=api_key, api_base=api_base, messages=messages, search=enable_web_search)
+            _update_session_stats(response, session_stats, model_capabilities)
             choice = response.choices[0]
             response_content = choice.message.content or ""
             
@@ -500,6 +519,17 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             border_style="green",
         )
         with Live(panel, refresh_per_second=10, console=console) as live:
+            # For streaming, we manually count tokens and update stats
+            in_cost = model_capabilities.get("input_cost_per_token", 0) or 0
+            out_cost = model_capabilities.get("output_cost_per_token", 0) or 0
+            
+            try:
+                prompt_tokens = litellm.token_counter(model=model, messages=messages)
+                session_stats['prompt_tokens'] += prompt_tokens
+                session_stats['cost'] += prompt_tokens * in_cost
+            except Exception:
+                pass # litellm might not know the model, ignore for now
+
             # For tool_calls, we need a new completion call to get the final answer.
             stream_response = litellm.completion(
                 model=model, api_key=api_key, api_base=api_base, messages=messages, stream=True, search=enable_web_search
@@ -515,6 +545,13 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
                             border_style="green",
                         )
                     )
+        
+        try:
+            completion_tokens = litellm.token_counter(model=model, text=full_response)
+            session_stats['completion_tokens'] += completion_tokens
+            session_stats['cost'] += completion_tokens * out_cost
+        except Exception:
+            pass
         messages.append({"role": "assistant", "content": full_response})
 
     return messages[-1]
@@ -637,6 +674,7 @@ def start_interactive_session(initial_prompt, cfg):
     yolo_mode = False
     rag_retriever = None
     prompt_count_since_rag_update = 0
+    session_stats = {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0}
 
     # --- Auto-init logic ---
     if cfg.get("memory_settings", {}).get("auto_init_memories", False):
@@ -677,7 +715,7 @@ def start_interactive_session(initial_prompt, cfg):
         console.print(Panel(initial_prompt, title="[bold blue]User[/]", border_style="blue"))
         messages.append({"role": "user", "content": initial_prompt})
         try:
-            process_llm_turn(messages, read_files_in_session, cfg, agent_mode, yolo_mode=yolo_mode)
+            process_llm_turn(messages, read_files_in_session, cfg, agent_mode, session_stats, yolo_mode=yolo_mode)
         except Exception as e:
             console.print(f"[bold red]An error occurred:[/] {e}")
             messages.pop()
@@ -716,7 +754,7 @@ def start_interactive_session(initial_prompt, cfg):
             active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
             
             model_name, tool_strategy, enable_web_search = None, "tool_calls", False
-            supports_tool_calls, supports_web_search = False, False
+            model_capabilities = {}
             
             if active_provider:
                 global_provider_settings = global_config.get("providers", {}).get(active_provider, {})
@@ -731,11 +769,31 @@ def start_interactive_session(initial_prompt, cfg):
                     all_models_info = config._get_provider_models()
                     lookup_provider = "openai" if active_provider == "hackclub_ai" else active_provider
                     model_capabilities = all_models_info.get(lookup_provider, {}).get(model_name, {})
-                    supports_tool_calls = model_capabilities.get("supports_function_calling", False)
-                    supports_web_search = model_capabilities.get("supports_web_search", False)
 
+            supports_tool_calls = model_capabilities.get("supports_function_calling", False)
+            supports_web_search = model_capabilities.get("supports_web_search", False)
+            max_input_tokens = model_capabilities.get("max_input_tokens")
+            
             tool_status = "✅" if supports_tool_calls and tool_strategy == "tool_calls" else "❌"
             search_status = "✅" if supports_web_search and enable_web_search else "❌"
+
+            # Estimate current context tokens for display
+            current_tokens = 0
+            if active_provider and model_name:
+                try:
+                    # Construct model string for litellm
+                    model_str = f"openai/{model_name}" if active_provider == "hackclub_ai" else f"{active_provider}/{model_name}"
+                    current_tokens = litellm.token_counter(model=model_str, messages=messages)
+                except Exception:
+                    pass # Ignore if model is not known to litellm
+
+            token_display = ""
+            if max_input_tokens:
+                token_display = f"Ctx: {current_tokens / 1000:.1f}k/{max_input_tokens / 1000:.0f}k"
+            else:
+                token_display = f"Ctx: {current_tokens / 1000:.1f}k" if current_tokens > 0 else "Ctx: N/A"
+
+            cost_display = f"Cost: ${session_stats['cost']:.3f}"
 
             input_frame = Frame(
                 Window(
@@ -747,7 +805,7 @@ def start_interactive_session(initial_prompt, cfg):
                 style="fg:cyan"
             )
 
-            toolbar_text = f"<b>({agent_mode})</b> Tool Calls {tool_status}  Search {search_status} | <b>[Alt+Enter]</b> for new line, <b>/help</b> for commands."
+            toolbar_text = f"<b>({agent_mode})</b> {token_display} | {cost_display} | Tools {tool_status} Search {search_status} | <b>[Alt+Enter]</b> new line, <b>/help</b>"
             toolbar = ConditionalContainer(
                 Window(
                     content=FormattedTextControl(to_formatted_text(HTML(toolbar_text))),
@@ -1080,7 +1138,7 @@ def start_interactive_session(initial_prompt, cfg):
 
             messages.append({"role": "user", "content": final_user_prompt})
             try:
-                process_llm_turn(messages, read_files_in_session, cfg, agent_mode, yolo_mode=yolo_mode)
+                process_llm_turn(messages, read_files_in_session, cfg, agent_mode, session_stats, yolo_mode=yolo_mode)
             except Exception as e:
                 console.print(f"[bold red]An error occurred:[/] {e}")
                 messages.pop()
