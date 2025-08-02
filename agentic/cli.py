@@ -16,7 +16,6 @@ from rich.panel import Panel
 from rich.prompt import Confirm
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.filters.core import is_done, has_history
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
@@ -30,6 +29,39 @@ from . import tools
 from . import config
 from .rag import CodeRAG
 from .tools import generate_xml_tool_prompt
+from abc import ABC, abstractmethod
+from prompt_toolkit.application.current import get_app
+
+# Vendored filters from prompt-toolkit to avoid versioning issues.
+class Filter(ABC):
+    """
+    Abstract base class for a filter.
+    This is a simple callable that returns a boolean.
+    """
+    @abstractmethod
+    def __call__(self) -> bool:
+        ...
+
+class IsDone(Filter):
+    """
+    Filter that is `True` when the CLI is finished.
+    """
+    def __call__(self) -> bool:
+        return get_app().is_done
+    def __repr__(self) -> str:
+        return "is_done"
+is_done = IsDone()
+
+class HasHistory(Filter):
+    """
+    Filter that is `True` if the current buffer has a history.
+    """
+    def __call__(self) -> bool:
+        return get_app().current_buffer.history.get_item_count() > 0
+    def __repr__(self) -> str:
+        return "has_history"
+has_history = HasHistory()
+
 
 console = Console()
 
