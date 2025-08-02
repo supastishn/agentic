@@ -403,7 +403,8 @@ def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
     try:
         # Run the agent loop. It will end by either returning a message (error)
         # or raising SubAgentEndTask (success/failure).
-        final_message = process_llm_turn(sub_messages, sub_read_files, cfg, mode, session_stats={}, yolo_mode=False, is_sub_agent=True)
+        sub_agent_session_stats = {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0, "last_prompt_tokens": 0, "edit_count": 0}
+        final_message = process_llm_turn(sub_messages, sub_read_files, cfg, mode, session_stats=sub_agent_session_stats, yolo_mode=False, is_sub_agent=True)
         
         if final_message:
             output_content = final_message.get("content", "Sub-agent did not return any output.")
@@ -1208,7 +1209,7 @@ def start_interactive_session(initial_prompt, cfg):
                 
                 # Let the agent respond to the summary
                 try:
-                    process_llm_turn(messages, read_files_in_session, cfg, agent_mode, yolo_mode=yolo_mode)
+                    process_llm_turn(messages, read_files_in_session, cfg, agent_mode, session_stats, yolo_mode=yolo_mode)
                 except Exception as e:
                     console.print(f"[bold red]An error occurred after compression:[/] {e}")
                     messages.pop()
