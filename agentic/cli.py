@@ -295,6 +295,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
     active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
     model, api_key, api_base = None, None, None
     tool_strategy = "tool_calls"
+    enable_web_search = False
 
     if active_provider:
         # Mode-specific provider settings override global ones
@@ -308,6 +309,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         api_key = final_provider_config.get("api_key") # Can be None
         api_base = final_provider_config.get("api_base") # Can be None
         tool_strategy = final_provider_config.get("tool_strategy", "tool_calls")
+        enable_web_search = final_provider_config.get("enable_web_search", False)
         
         if model_name:
             if active_provider == "hackclub_ai":
@@ -346,6 +348,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
                 messages=messages,
                 tools=available_tools_metadata,
                 tool_choice="auto",
+                search=enable_web_search,
             )
             choice = response.choices[0]
             if choice.finish_reason != "tool_calls":
@@ -354,7 +357,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             messages.append(choice.message)
             tool_calls = choice.message.tool_calls
         else: # xml strategy
-            response = litellm.completion(model=model, api_key=api_key, api_base=api_base, messages=messages)
+            response = litellm.completion(model=model, api_key=api_key, api_base=api_base, messages=messages, search=enable_web_search)
             choice = response.choices[0]
             response_content = choice.message.content or ""
             
@@ -499,7 +502,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         with Live(panel, refresh_per_second=10, console=console) as live:
             # For tool_calls, we need a new completion call to get the final answer.
             stream_response = litellm.completion(
-                model=model, api_key=api_key, api_base=api_base, messages=messages, stream=True
+                model=model, api_key=api_key, api_base=api_base, messages=messages, stream=True, search=enable_web_search
             )
             for chunk in stream_response:
                 content = chunk.choices[0].delta.content
@@ -705,6 +708,34 @@ def start_interactive_session(initial_prompt, cfg):
             def _(event):
                 event.current_buffer.insert_text('\n')
             
+            # --- Get current mode's settings for toolbar ---
+            modes = cfg.get("modes", {})
+            global_config = modes.get("global", {})
+            mode_config = modes.get(agent_mode, {})
+            active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
+            
+            model_name, tool_strategy, enable_web_search = None, "tool_calls", False
+            supports_tool_calls, supports_web_search = False, False
+            
+            if active_provider:
+                global_provider_settings = global_config.get("providers", {}).get(active_provider, {})
+                mode_provider_settings = mode_config.get("providers", {}).get(active_provider, {})
+                final_provider_config = {**global_provider_settings, **mode_provider_settings}
+                
+                model_name = final_provider_config.get("model")
+                tool_strategy = final_provider_config.get("tool_strategy", "tool_calls")
+                enable_web_search = final_provider_config.get("enable_web_search", False)
+
+                if model_name:
+                    all_models_info = config._get_provider_models()
+                    lookup_provider = "openai" if active_provider == "hackclub_ai" else active_provider
+                    model_capabilities = all_models_info.get(lookup_provider, {}).get(model_name, {})
+                    supports_tool_calls = model_capabilities.get("supports_function_calling", False)
+                    supports_web_search = model_capabilities.get("supports_web_search", False)
+
+            tool_status = "✅" if supports_tool_calls and tool_strategy == "tool_calls" else "❌"
+            search_status = "✅" if supports_web_search and enable_web_search else "❌"
+
             input_frame = Frame(
                 Window(
                     content=BufferControl(buffer=prompt_buffer),
@@ -715,7 +746,7 @@ def start_interactive_session(initial_prompt, cfg):
                 style="fg:cyan"
             )
 
-            toolbar_text = '<b>[Enter]</b> to send, <b>[Alt+Enter]</b> or <b>[Ctrl+Enter]</b> for new line, <b>/help</b> for commands.'
+            toolbar_text = f"<b>({agent_mode})</b> Tool Calls {tool_status}  Search {search_status} | <b>[Alt+Enter]</b> for new line, <b>/help</b> for commands."
             toolbar = ConditionalContainer(
                 Window(
                     content=FormattedTextControl(to_formatted_text(HTML(toolbar_text))),
@@ -835,7 +866,8 @@ def start_interactive_session(initial_prompt, cfg):
                         response = litellm.completion(
                             model=model,
                             api_key=api_key,
-                            messages=[{"role": "user", "content": summary_prompt}]
+                            messages=[{"role": "user", "content": summary_prompt}],
+                            search=False, # Explicitly disable search for internal tasks
                         )
                         summary = response.choices[0].message.content
                 except Exception as e:
@@ -1068,7 +1100,8 @@ def start_interactive_session(initial_prompt, cfg):
                                         response = litellm.completion(
                                             model=model_to_use,
                                             api_key=api_key,
-                                            messages=[{"role": "user", "content": update_check_prompt}]
+                                            messages=[{"role": "user", "content": update_check_prompt}],
+                                            search=False, # Explicitly disable search for internal tasks
                                         )
                                         response_content = response.choices[0].message.content
                                         

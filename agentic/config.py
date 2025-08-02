@@ -72,10 +72,12 @@ def _get_provider_models() -> dict:
             # Default to False for function calling, and True for system messages if not specified.
             supports_function_calling = model_info.get("supports_function_calling", False)
             supports_system_message = model_info.get("supports_system_message", True)
+            supports_web_search = model_info.get("supports_web_search", False)
 
             provider_models_info[provider][model_name] = {
                 "supports_function_calling": supports_function_calling,
                 "supports_system_message": supports_system_message,
+                "supports_web_search": supports_web_search,
                 "mode": model_mode,
             }
 
@@ -379,6 +381,10 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
         api_key = provider_config.get("api_key")
         api_key_display = "Not required" if is_hackclub else (f"****{api_key[-4:]}" if api_key else "Not set (Optional)")
         tool_strategy = mode_cfg.get("tool_strategy", "xml" if is_hackclub else "tool_calls")
+        enable_web_search = provider_config.get("enable_web_search", False)
+
+        model_capabilities = provider_models.get(active_provider, {}).get(model, {})
+        supports_web_search = model_capabilities.get("supports_web_search", False)
 
         config_view_content = (
             f"[bold cyan]Provider:[/bold cyan] {HACKCLUB_AI_DISPLAY_NAME if is_hackclub else active_provider or 'Not set'}\n"
@@ -386,6 +392,8 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             f"[bold cyan]API Key:[/bold cyan] {api_key_display}\n"
             f"[bold cyan]Tool Strategy:[/bold cyan] {tool_strategy}"
         )
+        if supports_web_search:
+            config_view_content += f"\n[bold cyan]Web Search:[/bold cyan] {'On' if enable_web_search else 'Off'}"
         console.print(Panel(config_view_content, title=f"[bold green]Configuring '{mode_name.capitalize()}' Mode[/]", expand=False))
 
         menu_items = [
@@ -393,10 +401,16 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             "2. Edit Model" if not is_hackclub else "[dim]2. Edit Model (N/A)[/dim]",
             "3. Edit API Key" if not is_hackclub else "[dim]3. Edit API Key (N/A)[/dim]",
             "4. Edit Tool Strategy" if not is_hackclub else "[dim]4. Edit Tool Strategy (N/A)[/dim]",
-            None,
         ]
+
+        web_search_option_idx = -1
+        if supports_web_search:
+            web_search_option_idx = len(menu_items)
+            menu_items.append(f"5. Toggle Web Search")
+
+        menu_items.append(None)
         # Dynamically build menu
-        next_option_num = 5
+        next_option_num = 6
         reset_option_idx, save_option_idx, discard_option_idx = None, None, None
 
         if mode_name != "global":
@@ -425,6 +439,11 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
         if selected_index is None or selected_index == discard_option_idx:  # Discard and Back
             config_to_edit["modes"][mode_name] = original_mode_cfg
             break
+
+        if selected_index == web_search_option_idx:
+            if supports_web_search:
+                provider_config["enable_web_search"] = not enable_web_search
+            continue
         
         if selected_index == reset_option_idx: # Reset to Global
             if mode_name in config_to_edit["modes"]:
