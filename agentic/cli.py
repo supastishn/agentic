@@ -1126,8 +1126,9 @@ def main():
         console.print("[bold yellow]Welcome to Agentic! No configuration found, setting up with default (Hackclub AI).[/]")
         try:
             with console.status("[yellow]Fetching Hackclub AI model...[/]"):
-                HACKCLUB_API_BASE = "https://api.hackclub.com/v1"
-                response = requests.get(f"{HACKCLUB_API_BASE}/model", timeout=5)
+                HACKCLUB_API_BASE = "https://ai.hackclub.com/v1"
+                HACKCLUB_MODEL_URL = "https://ai.hackclub.com/model"
+                response = requests.get(HACKCLUB_MODEL_URL, timeout=5)
                 response.raise_for_status()
                 model_name = response.json()["model"]
 
