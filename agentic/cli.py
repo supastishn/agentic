@@ -237,14 +237,34 @@ def _get_available_tools(agent_mode: str, is_sub_agent: bool, cfg: dict) -> list
         t for t in tools.TOOLS_METADATA if t["function"]["name"] not in disallowed_tools
     ]
 
-def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
-    """
-    Runs a non-interactive sub-agent for a specific task.
-    Returns a JSON string with the result from the sub-agent.
-    """
-    console.print(Panel(f"Starting sub-agent in '{mode}' mode...\nPrompt: {prompt}", title="[bold blue]Sub-agent Invoked[/]", border_style="blue"))
+def _get_model_info_for_mode(cfg: dict, agent_mode: str) -> tuple:
+    """Gets model info (name, capabilities) for a given agent mode."""
+    modes = cfg.get("modes", {})
+    global_config = modes.get("global", {})
+    mode_config = modes.get(agent_mode, {})
+    active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
+    
+    if not active_provider:
+        return None, None
 
-    # Determine tool strategy from config
+    global_provider_settings = global_config.get("providers", {}).get(active_provider, {})
+    mode_provider_settings = mode_config.get("providers", {}).get(active_provider, {})
+    final_provider_config = {**global_provider_settings, **mode_provider_settings}
+    
+    model_name = final_provider_config.get("model")
+    if not model_name:
+        return None, None
+
+    model_str = f"openai/{model_name}" if active_provider == "hackclub_ai" else f"{active_provider}/{model_name}"
+    
+    all_models_info = config._get_provider_models()
+    lookup_provider = "openai" if active_provider == "hackclub_ai" else active_provider
+    model_capabilities = all_models_info.get(lookup_provider, {}).get(model_name, {})
+    
+    return model_str, model_capabilities
+
+def _get_sub_agent_system_prompt(mode: str, cfg: dict) -> str:
+    """Builds the system prompt for a sub-agent."""
     modes_cfg = cfg.get("modes", {})
     global_cfg = modes_cfg.get("global", {})
     mode_cfg = modes_cfg.get(mode, {})
@@ -268,8 +288,17 @@ def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
         system_prompt_parts.append(f"### PERMANENT MEMORIES ###\n{memories}")
     
     system_prompt_parts.append(f"### TASK ###\n{system_prompt_template}")
-    system_prompt = "\n\n".join(filter(None, system_prompt_parts))
+    return "\n\n".join(filter(None, system_prompt_parts))
 
+
+def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
+    """
+    Runs a non-interactive sub-agent for a specific task.
+    Returns a JSON string with the result from the sub-agent.
+    """
+    console.print(Panel(f"Starting sub-agent in '{mode}' mode...\nPrompt: {prompt}", title="[bold blue]Sub-agent Invoked[/]", border_style="blue"))
+
+    system_prompt = _get_sub_agent_system_prompt(mode, cfg)
     sub_messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": prompt}
@@ -425,6 +454,58 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                     console.print(f"[bold red]XML Parse Error for tool call:[/]\n{tool_xml}\nError: {e}")
                     continue
         
+        # --- Cost Confirmation Logic ---
+        safety_settings = cfg.get("safety_settings", {})
+        cost_threshold = safety_settings.get("cost_threshold", 0.0)
+        
+        if cost_threshold > 0.0:
+            estimated_cost = 0.0
+            sub_agent_calls_to_confirm = []
+            
+            for tool_call in tool_calls:
+                is_native_call = hasattr(tool_call, 'function')
+                tool_name = tool_call.function.name if is_native_call else tool_call["function"]["name"]
+                if tool_name == "MakeSubagent":
+                    try:
+                        arguments_str = tool_call.function.arguments if is_native_call else tool_call["function"]["arguments"]
+                        sub_agent_calls_to_confirm.append(json.loads(arguments_str))
+                    except json.JSONDecodeError:
+                        continue # Ignore malformed args for cost check
+            
+            if sub_agent_calls_to_confirm:
+                for call_args in sub_agent_calls_to_confirm:
+                    sub_agent_mode = call_args.get("mode")
+                    sub_agent_prompt = call_args.get("prompt")
+                    if not sub_agent_mode or not sub_agent_prompt: continue
+
+                    model_str, model_caps = _get_model_info_for_mode(cfg, sub_agent_mode)
+                    if not model_str or not model_caps: continue
+                    
+                    system_prompt = _get_sub_agent_system_prompt(sub_agent_mode, cfg)
+                    sub_agent_messages = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": sub_agent_prompt}
+                    ]
+                    
+                    in_cost = model_caps.get("input_cost_per_token", 0) or 0
+                    try:
+                        prompt_tokens = litellm.token_counter(model=model_str, messages=sub_agent_messages)
+                        estimated_cost += prompt_tokens * in_cost
+                    except Exception:
+                        pass # Cannot estimate cost for this call
+
+            if estimated_cost > cost_threshold:
+                if not Confirm.ask(f"[bold yellow]Executing tool(s) has an estimated minimum cost of ${estimated_cost:.4f}. Proceed?[/]"):
+                    console.print("[bold red]Tool execution cancelled by user due to cost.[/bold red]")
+                    # Remove the assistant's message that contained the expensive tool call
+                    if messages[-1]["role"] == "assistant":
+                        messages.pop()
+                    
+                    # Add user feedback message and re-prompt the LLM
+                    user_feedback = "User cancelled tool execution due to high estimated cost. Please reconsider your plan, find a cheaper alternative, or ask the user to proceed."
+                    messages.append({"role": "user", "content": user_feedback})
+                    continue # Restart the while-true loop in process_llm_turn
+
         # --- Common Tool Execution Logic ---
         has_executed_tool = False
         xml_tool_outputs = []

@@ -951,6 +951,53 @@ def _prompt_for_custom_instructions(config_to_edit: dict):
             console.input("Press Enter to return to settings...")
             break
 
+def _prompt_for_safety_settings(config_to_edit: dict):
+    """Interactively prompts for safety and cost settings."""
+    console = Console()
+    
+    settings = config_to_edit.setdefault("safety_settings", {})
+    original_settings = json.loads(json.dumps(settings))
+
+    while True:
+        console.clear()
+        cost_threshold = settings.get("cost_threshold", 0.0)
+        
+        cost_display = f"${cost_threshold:.4f}" if cost_threshold > 0 else "Disabled"
+
+        config_view_content = (
+            f"[bold cyan]Cost Confirmation Threshold:[/bold cyan] {cost_display}\n"
+            "[dim]If the estimated cost of a sub-agent task exceeds this, you will be asked for confirmation.[/dim]"
+        )
+        console.print(Panel(config_view_content, title="[bold green]Safety & Cost Settings[/]", expand=False))
+
+        menu_items = [
+            "1. Edit Cost Threshold",
+            None,
+            "2. Back (Save Changes)",
+            "3. Back (Discard Changes)",
+        ]
+
+        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 3:
+            config_to_edit["safety_settings"] = original_settings
+            if not config_to_edit["safety_settings"]:
+                config_to_edit.pop("safety_settings", None)
+            break
+        elif selected_index == 0:
+            new_threshold_str = console.input("Enter new cost threshold (e.g., 0.01 for 1 cent, 0 to disable): ").strip()
+            try:
+                new_threshold = float(new_threshold_str)
+                if new_threshold < 0: raise ValueError
+                settings["cost_threshold"] = new_threshold
+            except (ValueError, TypeError):
+                console.print("\n[bold red]Invalid input. Please enter a non-negative number.[/bold red]")
+                console.input("Press Enter to continue...")
+            continue
+        elif selected_index == 2:
+            break
+
 def _prompt_for_other_settings(config_to_edit: dict):
     """Shows a submenu for various settings."""
     console = Console()
@@ -963,14 +1010,15 @@ def _prompt_for_other_settings(config_to_edit: dict):
             "2. RAG Settings",
             "3. Memory Settings",
             "4. Tools Settings",
+            "5. Safety & Cost Settings",
             None,
-            "5. Back to Main Menu",
+            "6. Back to Main Menu",
         ]
 
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 5:
+        if selected_index is None or selected_index == 6:
             break
         elif selected_index == 0:
             _prompt_for_custom_instructions(config_to_edit)
@@ -980,6 +1028,8 @@ def _prompt_for_other_settings(config_to_edit: dict):
             _prompt_for_memory_settings(config_to_edit)
         elif selected_index == 3:
             _prompt_for_tools_settings(config_to_edit)
+        elif selected_index == 4:
+            _prompt_for_safety_settings(config_to_edit)
 
 
 def prompt_for_config() -> dict:

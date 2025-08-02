@@ -100,6 +100,52 @@ def find_files(pattern: str) -> str:
     except Exception as e:
         return f"Error finding files: {e}"
 
+def list_symbols(path: str) -> str:
+    """Lists functions and classes in a Python file using AST parsing."""
+    p = Path(path)
+    if not p.is_file():
+        return f"Error: File not found at {path}"
+    if not path.endswith('.py'):
+        return "Error: ListSymbols currently only supports Python (.py) files."
+
+    try:
+        content = p.read_text()
+        tree = ast.parse(content, filename=path)
+        symbols = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
+                symbol_type = "class" if isinstance(node, ast.ClassDef) else "function"
+                symbols.append(f"{symbol_type}: {node.name} (line {node.lineno})")
+        return "\n".join(sorted(symbols)) if symbols else "No symbols found."
+    except Exception as e:
+        return f"Error parsing symbols in {path}: {e}"
+
+def read_symbol(path: str, symbol_name: str) -> str:
+    """Reads the source code of a specific function or class from a Python file."""
+    p = Path(path)
+    if not p.is_file():
+        return f"Error: File not found at {path}"
+    if not path.endswith('.py'):
+        return "Error: ReadSymbol currently only supports Python (.py) files."
+
+    try:
+        source_code = p.read_text()
+        tree = ast.parse(source_code, filename=path)
+
+        target_node = None
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)):
+                if node.name == symbol_name:
+                    target_node = node
+                    break
+
+        if not target_node:
+            return f"Error: Symbol '{symbol_name}' not found in {path}."
+
+        return ast.get_source_segment(source_code, target_node)
+    except Exception as e:
+        return f"Error reading symbol '{symbol_name}' from {path}: {e}"
+
 def search_text(query: str, file_path: str) -> str:
     """Searches for a query string in a file and returns matching lines with line numbers."""
     p = Path(file_path)
@@ -276,10 +322,12 @@ AVAILABLE_TOOLS = {
     "EndTask": end_task,
     "FindFiles": find_files,
     "Git": git,
+    "ListSymbols": list_symbols,
     "MakeSubagent": make_subagent,
     "ReadFile": read_file,
     "ReadFolder": read_folder,
     "ReadManyFiles": read_many_files,
+    "ReadSymbol": read_symbol,
     "SaveMemory": save_memory,
     "SearchText": search_text,
     "Shell": shell,
@@ -294,6 +342,8 @@ TOOLS_METADATA = [
     {"type": "function", "function": {"name": "FindFiles", "description": "Finds files recursively using a glob pattern (e.g., '**/*.py').", "parameters": {"type": "object", "properties": {"pattern": {"type": "string", "description": "The glob pattern to search for."}}, "required": ["pattern"]}}},
     {"type": "function", "function": {"name": "ReadFile", "description": "Reads the entire content of a single file.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file."}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "ReadManyFiles", "description": "Reads the contents of multiple files at once.", "parameters": {"type": "object", "properties": {"paths": {"type": "array", "items": {"type": "string"}, "description": "A list of relative paths to the files."}}, "required": ["paths"]}}},
+    {"type": "function", "function": {"name": "ListSymbols", "description": "Lists all functions and classes in a Python (.py) file. Useful for quickly understanding a file's structure.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the Python file."}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "ReadSymbol", "description": "Reads the full source code of a specific function or class from a Python (.py) file. Use 'ListSymbols' first to find the symbol name.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the Python file."}, "symbol_name": {"type": "string", "description": "The name of the function or class to read."}}, "required": ["path", "symbol_name"]}}},
     {"type": "function", "function": {"name": "SearchText", "description": "Searches for a text query within a single file and returns matching lines.", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "The text to search for."}, "file_path": {"type": "string", "description": "The path of the file to search in."}}, "required": ["query", "file_path"]}}},
     {"type": "function", "function": {"name": "WriteFile", "description": "Writes content to a file, creating it if it doesn't exist or overwriting it completely if it does.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file."}, "content": {"type": "string", "description": "The full content to write to the file."}}, "required": ["path", "content"]}}},
     {"type": "function", "function": {"name": "Edit", "description": "Performs a targeted search-and-replace on a file. Safer than WriteFile for small changes. Fails if the search string is not found.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file to edit."}, "search": {"type": "string", "description": "The exact text to find in the file."}, "replace": {"type": "string", "description": "The text to replace the 'search' text with."}}, "required": ["path", "search", "replace"]}}},
