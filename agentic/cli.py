@@ -306,12 +306,25 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             choice = response.choices[0]
             response_content = choice.message.content or ""
             
-            messages.append(choice.message)
-            
+            # Separate text from tool calls
             tool_xml_blocks = re.findall(r'<tool_code>(.*?)</tool_code>', response_content, re.DOTALL)
+            text_content = re.sub(r'<tool_code>.*?</tool_code>', '', response_content, flags=re.DOTALL).strip()
             
+            # If there's conversational text, display it immediately so the user sees the agent's reasoning.
+            if text_content:
+                panel = Panel(
+                    Markdown(text_content, style="default", code_theme="monokai"),
+                    title="[bold green]Assistant[/]",
+                    border_style="green",
+                )
+                console.print(panel)
+
+            # Add the full, unmodified response to history for the model's context.
+            messages.append(choice.message)
+
             if not tool_xml_blocks:
-                break # No tools, proceed to streaming response
+                # The response was just text, which we've displayed. We're done for this turn.
+                return messages[-1]
             
             # Convert XML blocks to a format that resembles native tool_calls
             tool_calls = []
@@ -419,20 +432,9 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             break
 
     # This part handles the final text response from the assistant.
-    if tool_strategy == 'xml' and messages[-1]['role'] == 'assistant':
-        # For XML, we already have the complete final response. We just need to display it.
-        full_response = messages[-1].get("content", "")
-        # Remove any lingering tool code from the final output for cleaner display
-        full_response = re.sub(r'<tool_code>.*?</tool_code>', '', full_response, flags=re.DOTALL).strip()
-        
-        panel = Panel(
-            Markdown(full_response, style="default", code_theme="monokai"),
-            title="[bold green]Assistant[/]",
-            border_style="green",
-        )
-        console.print(panel)
-    else:
-        # For tool_calls, or if the XML flow produced no response, we stream.
+    # For the XML strategy, final responses are handled inside the loop.
+    # This block is for the `tool_calls` strategy's final streaming response.
+    if tool_strategy == 'tool_calls':
         full_response = ""
         panel = Panel(
             "",
@@ -441,11 +443,6 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         )
         with Live(panel, refresh_per_second=10, console=console) as live:
             # For tool_calls, we need a new completion call to get the final answer.
-            # For XML, this path is hit if the LLM responds without tool calls,
-            # so we need to stream out that response. We can't just call completion again.
-            # However, the logic for XML now appends the message and breaks, so we should have it.
-            # A second completion call is the original logic, let's stick to it for tool_calls.
-            # The XML strategy's final response is handled above. This block is now tool_calls-centric.
             stream_response = litellm.completion(
                 model=model, api_key=api_key, messages=messages, stream=True
             )
