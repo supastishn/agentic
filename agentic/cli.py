@@ -33,13 +33,17 @@ from .tools import generate_xml_tool_prompt
 console = Console()
 
 ASCII_LOGO = r"""
-[bold green]   ###    #######   ######   #######  #######  ####   ######  [/bold green]
-[bold green]  ## ##  ##     ## ##    ## ##     ##   ##      ##   ##    ## [/bold green]
-[bold cyan] ##   ## ##     ## ##       ##     ##   ##      ##   ##       [/bold cyan]
-[bold cyan]##     ## ##     ##  ######  ##     ##   ##      ##    ######  [/bold cyan]
-[bold blue]######### ##     ##       ## ##     ##   ##      ##         ## [/bold blue]
-[bold blue]##     ## ##     ## ##    ## ##     ##   ##      ##   ##    ## [/bold blue]
-[bold magenta]##     ##  #######   ######   #######   ##     ####   ######  [/bold magenta]
+[bold green]                                         █████     ███          [/bold green]
+[bold green]                                        ░░███     ░░░           [/bold green]
+[bold cyan]  ██████    ███████  ██████  ████████   ███████   ████   ██████ [/bold cyan]
+[bold cyan] ░░░░░███  ███░░███ ███░░███░░███░░███ ░░░███░   ░░███  ███░░███[/bold cyan]
+[bold blue]  ███████ ░███ ░███░███████  ░███ ░███   ░███     ░███ ░███ ░░░ [/bold blue]
+[bold blue] ███░░███ ░███ ░███░███░░░   ░███ ░███   ░███ ███ ░███ ░███  ███[/bold blue]
+[bold magenta]░░████████░░███████░░██████  ████ █████  ░░█████  █████░░██████ [/bold magenta]
+[bold magenta] ░░░░░░░░  ░░░░░███ ░░░░░░  ░░░░ ░░░░░    ░░░░░  ░░░░░  ░░░░░░  [/bold magenta]
+[bold white]           ███ ░███                                             [/bold white]
+[bold white]          ░░██████                                              [/bold white]
+[bold white]           ░░░░░░                                               [/bold white]
 """
 
 class SubAgentEndTask(Exception):

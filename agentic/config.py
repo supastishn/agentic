@@ -190,15 +190,21 @@ def _prompt_for_compression_config(config_to_edit: dict, provider_models: dict, 
             break
         
         if selected_index == 0:  # Select Provider
-            if not all_providers:
-                console.print("\n[yellow]Could not determine providers.[/yellow]")
-                console.input("Press Enter to continue...")
-                continue
-            provider_menu = TerminalMenu(all_providers, title="Select a provider")
+            CUSTOM_PROVIDER_OPTION = "Custom..."
+            provider_menu_items = [CUSTOM_PROVIDER_OPTION] + all_providers
+            provider_menu = TerminalMenu(provider_menu_items, title="Select a provider")
             sel_provider_idx = provider_menu.show()
-            if sel_provider_idx is not None:
-                new_provider = all_providers[sel_provider_idx]
-                # If provider changes, clear the model as it's likely invalid for the new provider
+            
+            if sel_provider_idx is None:
+                continue
+
+            new_provider = None
+            if sel_provider_idx == 0:
+                new_provider = console.input("Enter custom provider name: ").strip()
+            else:
+                new_provider = provider_menu_items[sel_provider_idx]
+
+            if new_provider:
                 if comp_cfg.get("provider") != new_provider:
                     comp_cfg.pop("model", None)
                 comp_cfg["provider"] = new_provider
@@ -211,15 +217,21 @@ def _prompt_for_compression_config(config_to_edit: dict, provider_models: dict, 
                 console.input("Press Enter to continue...")
                 continue
             
+            CUSTOM_MODEL_OPTION = "Custom..."
             models_for_provider = list(provider_models.get(provider, {}).keys())
+            menu_items = [CUSTOM_MODEL_OPTION] + models_for_provider
+            
+            model_menu = TerminalMenu(menu_items, title=f"Select a model for {provider}")
+            sel_model_idx = model_menu.show()
 
-            if not models_for_provider:
-                console.print(f"\n[yellow]No models found for '{provider}'. Enter one manually.[/yellow]")
-                new_model = console.input(f"Enter model for {provider}: ").strip()
+            if sel_model_idx is None:
+                continue
+            
+            new_model = None
+            if sel_model_idx == 0: # Custom selected
+                new_model = console.input(f"Enter custom model name for {provider}: ").strip()
             else:
-                model_menu = TerminalMenu(models_for_provider, title=f"Select a model for {provider}")
-                sel_model_idx = model_menu.show()
-                new_model = models_for_provider[sel_model_idx] if sel_model_idx is not None else None
+                new_model = menu_items[sel_model_idx]
             
             if new_model:
                 comp_cfg["model"] = new_model
@@ -282,14 +294,21 @@ def _prompt_for_embedding_config(config_to_edit: dict, provider_models: dict):
             break
         
         if selected_index == 0:  # Select Provider
-            if not all_providers:
-                console.print("\n[yellow]Could not determine any providers with embedding models.[/yellow]")
-                console.input("Press Enter to continue...")
-                continue
-            provider_menu = TerminalMenu(all_providers, title="Select a provider")
+            CUSTOM_PROVIDER_OPTION = "Custom..."
+            provider_menu_items = [CUSTOM_PROVIDER_OPTION] + all_providers
+            provider_menu = TerminalMenu(provider_menu_items, title="Select a provider")
             sel_provider_idx = provider_menu.show()
-            if sel_provider_idx is not None:
-                new_provider = all_providers[sel_provider_idx]
+
+            if sel_provider_idx is None:
+                continue
+            
+            new_provider = None
+            if sel_provider_idx == 0:
+                new_provider = console.input("Enter custom provider name: ").strip()
+            else:
+                new_provider = provider_menu_items[sel_provider_idx]
+
+            if new_provider:
                 if emb_cfg.get("provider") != new_provider:
                     emb_cfg.pop("model", None)
                 emb_cfg["provider"] = new_provider
@@ -302,18 +321,24 @@ def _prompt_for_embedding_config(config_to_edit: dict, provider_models: dict):
                 console.input("Press Enter to continue...")
                 continue
             
+            CUSTOM_MODEL_OPTION = "Custom..."
             models_for_provider = [
                 name for name, info in provider_models.get(provider, {}).items()
                 if info.get("mode") == "embedding"
             ]
+            menu_items = [CUSTOM_MODEL_OPTION] + models_for_provider
 
-            if not models_for_provider:
-                console.print(f"\n[yellow]No embedding models found for '{provider}'. Enter one manually.[/yellow]")
-                new_model = console.input(f"Enter embedding model for {provider}: ").strip()
+            model_menu = TerminalMenu(menu_items, title=f"Select an embedding model for {provider}")
+            sel_model_idx = model_menu.show()
+
+            if sel_model_idx is None:
+                continue
+            
+            new_model = None
+            if sel_model_idx == 0: # Custom selected
+                new_model = console.input(f"Enter custom embedding model for {provider}: ").strip()
             else:
-                model_menu = TerminalMenu(models_for_provider, title=f"Select an embedding model for {provider}")
-                sel_model_idx = model_menu.show()
-                new_model = models_for_provider[sel_model_idx] if sel_model_idx is not None else None
+                new_model = menu_items[sel_model_idx]
             
             if new_model:
                 emb_cfg["model"] = new_model
@@ -461,13 +486,15 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             break
 
         if selected_index == 0:  # Select Provider
-            provider_menu_items = [HACKCLUB_AI_DISPLAY_NAME] + all_providers
+            CUSTOM_PROVIDER_OPTION = "Custom..."
+            provider_menu_items = [HACKCLUB_AI_DISPLAY_NAME, CUSTOM_PROVIDER_OPTION] + all_providers
             provider_menu = TerminalMenu(provider_menu_items, title="Select a provider")
             sel_provider_idx = provider_menu.show()
 
             if sel_provider_idx is None:
                 continue
 
+            new_provider_key = None
             if sel_provider_idx == 0: # Hackclub AI selected
                 new_provider_key = HACKCLUB_AI_KEY
                 try:
@@ -489,11 +516,22 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
                 except requests.RequestException as e:
                     console.print(f"[bold red]Error:[/] Could not fetch Hackclub AI model info: {e}")
                     console.input("Press Enter to continue...")
+            
+            elif provider_menu_items[sel_provider_idx] == CUSTOM_PROVIDER_OPTION:
+                custom_provider = console.input("Enter custom provider name: ").strip()
+                if custom_provider:
+                    new_provider_key = custom_provider
+                else:
+                    continue # No input, do nothing
+
             else: # Other provider selected
-                new_provider_key = all_providers[sel_provider_idx - 1]
+                new_provider_key = provider_menu_items[sel_provider_idx]
+
+            if new_provider_key and new_provider_key != HACKCLUB_AI_KEY:
                 existing_settings = mode_cfg.get("providers", {}).get(new_provider_key, {})
                 mode_cfg["active_provider"] = new_provider_key
                 mode_cfg.setdefault("providers", {})[new_provider_key] = existing_settings
+            
             continue
 
         elif is_hackclub and selected_index in [1, 2, 3]:
@@ -508,29 +546,37 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
                 console.input("Press Enter to continue...")
                 continue
             
+            CUSTOM_MODEL_OPTION = "Custom..."
             models_for_provider_dict = provider_models.get(active_provider, {})
             model_names = list(models_for_provider_dict.keys())
+            
+            menu_entries = [CUSTOM_MODEL_OPTION]
+            for name in model_names:
+                capabilities = models_for_provider_dict.get(name, {})
+                supports_fc = capabilities.get("supports_function_calling", False)
+                if supports_fc:
+                    menu_entries.append(name)
+                else:
+                    menu_entries.append(f"{name} (tool calls not supported)")
+            
+            model_menu = TerminalMenu(menu_entries, title=f"Select a model for {active_provider}")
+            sel_model_idx = model_menu.show()
+            
+            if sel_model_idx is None:
+                continue
 
-            if not model_names:
-                console.print(f"\n[yellow]No models found for '{active_provider}'. Enter one manually.[/yellow]")
-                new_model = console.input(f"Enter model for {active_provider}: ").strip()
+            new_model = None
+            if sel_model_idx == 0: # Custom selected
+                custom_model = console.input(f"Enter custom model name for {active_provider}: ").strip()
+                if custom_model:
+                    new_model = custom_model
             else:
-                menu_entries = []
-                for name in model_names:
-                    capabilities = models_for_provider_dict.get(name, {})
-                    supports_fc = capabilities.get("supports_function_calling", False)
-                    if supports_fc:
-                        menu_entries.append(name)
-                    else:
-                        menu_entries.append(f"{name} (tool calls not supported)")
-                
-                model_menu = TerminalMenu(menu_entries, title=f"Select a model for {active_provider}")
-                sel_model_idx = model_menu.show()
-                new_model = model_names[sel_model_idx] if sel_model_idx is not None else None
+                new_model = model_names[sel_model_idx - 1]
             
             if new_model:
                 mode_cfg["providers"].setdefault(active_provider, {})["model"] = new_model
                 # If model doesn't support tool_calls, force strategy to xml
+                # For custom models, we assume they don't support tool_calls unless we know otherwise.
                 model_capabilities = models_for_provider_dict.get(new_model, {})
                 supports_fc = model_capabilities.get("supports_function_calling", False)
                 if not supports_fc:
