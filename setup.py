@@ -17,6 +17,7 @@ setup(
         "cryptography",
         "litellm",
         "pathspec",
+        "playwright",
         "prompt-toolkit",
         "python-dotenv",
         "requests",

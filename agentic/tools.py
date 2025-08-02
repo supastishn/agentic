@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 import ast
 
+from . import browser
 from . import config
 
 def generate_xml_tool_prompt(tools_metadata: list) -> str:
@@ -49,6 +50,30 @@ def generate_xml_tool_prompt(tools_metadata: list) -> str:
     return "\n".join(prompt_parts)
 
 # --- Tool Implementations ---
+
+def browser_start() -> str:
+    """Starts the headless browser. Must be called before any other browser action."""
+    return browser.browser_manager.start()
+
+def browser_close() -> str:
+    """Closes the headless browser."""
+    return browser.browser_manager.close()
+
+def browser_navigate(url: str) -> str:
+    """Navigates the current browser page to a URL."""
+    return browser.browser_manager.navigate(url)
+
+def browser_get_content() -> str:
+    """Returns the full HTML content of the current browser page."""
+    return browser.browser_manager.get_content()
+
+def browser_click(selector: str) -> str:
+    """Clicks on an element specified by a CSS selector."""
+    return browser.browser_manager.click(selector)
+
+def browser_type_text(selector: str, text: str) -> str:
+    """Types text into an input field specified by a CSS selector."""
+    return browser.browser_manager.type_text(selector, text)
 
 def read_file(path: str, read_files_in_session: set) -> str:
     """Reads the content of a single file."""
@@ -319,6 +344,12 @@ def make_subagent(mode: str, prompt: str) -> str:
 # --- Tool Definitions for the LLM ---
 
 AVAILABLE_TOOLS = {
+    "BrowserClick": browser_click,
+    "BrowserClose": browser_close,
+    "BrowserGetContent": browser_get_content,
+    "BrowserNavigate": browser_navigate,
+    "BrowserStart": browser_start,
+    "BrowserTypeText": browser_type_text,
     "Edit": edit,
     "EndTask": end_task,
     "FindFiles": find_files,
@@ -339,6 +370,12 @@ AVAILABLE_TOOLS = {
 }
 
 TOOLS_METADATA = [
+    {"type": "function", "function": {"name": "BrowserStart", "description": "Starts the headless browser. Must be called before any other browser operations.", "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {"name": "BrowserClose", "description": "Closes the headless browser, ending the current session.", "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {"name": "BrowserNavigate", "description": "Navigates the current browser page to a URL.", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "The URL to navigate to."}}, "required": ["url"]}}},
+    {"type": "function", "function": {"name": "BrowserGetContent", "description": "Returns the full HTML content of the current page. Useful for understanding the page structure.", "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {"name": "BrowserClick", "description": "Clicks on an element specified by a CSS selector.", "parameters": {"type": "object", "properties": {"selector": {"type": "string", "description": "The CSS selector of the element to click (e.g., '#submit-button', '.link-class')."}}, "required": ["selector"]}}},
+    {"type": "function", "function": {"name": "BrowserTypeText", "description": "Types text into an input field specified by a CSS selector.", "parameters": {"type": "object", "properties": {"selector": {"type": "string", "description": "The CSS selector of the input element."}, "text": {"type": "string", "description": "The text to type."}}, "required": ["selector", "text"]}}},
     {"type": "function", "function": {"name": "ReadFolder", "description": "Lists files and directories in a specified path. Use '.' for the current directory.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the directory."}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "FindFiles", "description": "Finds files recursively using a glob pattern (e.g., '**/*.py').", "parameters": {"type": "object", "properties": {"pattern": {"type": "string", "description": "The glob pattern to search for."}}, "required": ["pattern"]}}},
     {"type": "function", "function": {"name": "ReadFile", "description": "Reads the entire content of a single file.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "The relative path to the file."}}, "required": ["path"]}}},
