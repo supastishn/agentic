@@ -9,6 +9,44 @@ from rich.panel import Panel
 
 from . import config
 
+def generate_xml_tool_prompt(tools_metadata: list) -> str:
+    """Generates a prompt explaining how to use tools with XML syntax."""
+    if not tools_metadata:
+        return ""
+
+    prompt_parts = [
+        "You have access to a set of tools to answer user questions. When you need to use a tool, you must respond with a `<tool_code>` block containing the XML for the tool call. The tool name is the main tag, and parameters are nested tags.",
+        "For example, to call the 'ReadFile' tool with path 'src/main.py', you would respond with:",
+        "<tool_code>\n<ReadFile>\n    <path>src/main.py</path>\n</ReadFile>\n</tool_code>",
+        "\nIf you need to call multiple tools, provide multiple `<tool_code>` blocks.",
+        "\nHere are the available tools:",
+        "<tools>"
+    ]
+
+    for tool in tools_metadata:
+        func = tool["function"]
+        name = func["name"]
+        description = func["description"]
+        
+        tool_str = f'  <tool name="{name}">\n'
+        tool_str += f'    <description>{description}</description>\n'
+        
+        params = func.get("parameters", {}).get("properties", {})
+        if params:
+            tool_str += '    <parameters>\n'
+            required_params = func.get("parameters", {}).get("required", [])
+            for param_name, param_info in params.items():
+                param_type = param_info.get("type")
+                is_required = "true" if param_name in required_params else "false"
+                tool_str += f'      <param name="{param_name}" type="{param_info.get("type")}" required="{is_required}" />\n'
+            tool_str += '    </parameters>\n'
+        
+        tool_str += '  </tool>'
+        prompt_parts.append(tool_str)
+        
+    prompt_parts.append("</tools>")
+    return "\n".join(prompt_parts)
+
 # --- Tool Implementations ---
 
 def read_file(path: str, read_files_in_session: set) -> str:

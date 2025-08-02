@@ -4,6 +4,8 @@ import argparse
 import sys
 import json
 import os
+import re
+import xml.etree.ElementTree as ET
 import litellm
 from rich.console import Console
 from rich.live import Live
@@ -24,6 +26,7 @@ from prompt_toolkit.formatted_text import to_formatted_text
 
 from . import tools
 from . import config
+from .tools import generate_xml_tool_prompt
 
 console = Console()
 
@@ -156,6 +159,34 @@ def is_config_valid(cfg):
     return False
 
 
+def _get_available_tools(agent_mode: str, is_sub_agent: bool) -> list:
+    """Gets the list of available tools metadata based on the agent's mode."""
+    disallowed_tools = set()
+
+    # The 'memory' mode is the only one that should be able to save memories.
+    if agent_mode != "memory":
+        disallowed_tools.add("SaveMemory")
+
+    if agent_mode in ["ask", "memory", "architect"]:
+        disallowed_tools.update({"WriteFile", "Edit", "Shell"})
+    elif agent_mode == "agent-maker":
+        # Agent-maker can only read, think, and make sub-agents.
+        disallowed_tools.update({"WriteFile", "Edit", "Shell", "UserInput"})
+
+    # Sub-agents have additional restrictions
+    if is_sub_agent:
+        disallowed_tools.update({"UserInput", "MakeSubagent"})
+    else: # Non-sub-agents cannot end the task
+        disallowed_tools.add("EndTask")
+    
+    # All modes except agent-maker cannot create sub-agents.
+    if agent_mode != "agent-maker":
+        disallowed_tools.add("MakeSubagent")
+
+    return [
+        t for t in tools.TOOLS_METADATA if t["function"]["name"] not in disallowed_tools
+    ]
+
 def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
     """
     Runs a non-interactive sub-agent for a specific task.
@@ -163,12 +194,27 @@ def run_sub_agent(mode: str, prompt: str, cfg: dict) -> str:
     """
     console.print(Panel(f"Starting sub-agent in '{mode}' mode...\nPrompt: {prompt}", title="[bold blue]Sub-agent Invoked[/]", border_style="blue"))
 
+    # Determine tool strategy from config
+    modes_cfg = cfg.get("modes", {})
+    global_cfg = modes_cfg.get("global", {})
+    mode_cfg = modes_cfg.get(mode, {})
+    active_provider = mode_cfg.get("active_provider") or global_cfg.get("active_provider")
+    provider_cfg = {**global_cfg.get("providers", {}).get(active_provider, {}), **mode_cfg.get("providers", {}).get(active_provider, {})}
+    tool_strategy = provider_cfg.get("tool_strategy", "tool_calls")
+
     memories = load_memories()
     system_prompt_template = SYSTEM_PROMPTS.get(mode, CODE_SYSTEM_PROMPT)
+    
+    system_prompt_parts = []
+    if tool_strategy == "xml":
+        available_tools = _get_available_tools(mode, is_sub_agent=True)
+        system_prompt_parts.append(generate_xml_tool_prompt(available_tools))
+
     if memories:
-        system_prompt = f"### PERMANENT MEMORIES ###\n{memories}\n\n### TASK ###\n{system_prompt_template}"
-    else:
-        system_prompt = system_prompt_template
+        system_prompt_parts.append(f"### PERMANENT MEMORIES ###\n{memories}")
+    
+    system_prompt_parts.append(f"### TASK ###\n{system_prompt_template}")
+    system_prompt = "\n\n".join(filter(None, system_prompt_parts))
 
     sub_messages = [
         {"role": "system", "content": system_prompt},
@@ -209,33 +255,7 @@ def _should_add_to_history(text: str):
 def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo_mode: bool = False, is_sub_agent: bool = False):
     """Handles a single turn of the LLM, including tool calls and user confirmation."""
     DANGEROUS_TOOLS = {"WriteFile", "Edit", "Shell"}
-
-    # Filter tools based on mode and if it's a sub-agent
-    disallowed_tools = set()
-
-    # The 'memory' mode is the only one that should be able to save memories.
-    if agent_mode != "memory":
-        disallowed_tools.add("SaveMemory")
-
-    if agent_mode in ["ask", "memory", "architect"]:
-        disallowed_tools.update({"WriteFile", "Edit", "Shell"})
-    elif agent_mode == "agent-maker":
-        # Agent-maker can only read, think, and make sub-agents.
-        disallowed_tools.update({"WriteFile", "Edit", "Shell", "UserInput"})
-
-    # Sub-agents have additional restrictions
-    if is_sub_agent:
-        disallowed_tools.update({"UserInput", "MakeSubagent"})
-    else: # Non-sub-agents cannot end the task
-        disallowed_tools.add("EndTask")
-    
-    # All modes except agent-maker cannot create sub-agents.
-    if agent_mode != "agent-maker":
-        disallowed_tools.add("MakeSubagent")
-
-    available_tools_metadata = [
-        t for t in tools.TOOLS_METADATA if t["function"]["name"] not in disallowed_tools
-    ]
+    available_tools_metadata = _get_available_tools(agent_mode, is_sub_agent)
 
     # Get model and API key, falling back to global settings
     modes = cfg.get("modes", {})
@@ -244,6 +264,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
 
     active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
     model, api_key = None, None
+    tool_strategy = "tool_calls"
 
     if active_provider:
         # Mode-specific provider settings override global ones
@@ -255,6 +276,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         
         model_name = final_provider_config.get("model")
         api_key = final_provider_config.get("api_key") # Can be None
+        tool_strategy = final_provider_config.get("tool_strategy", "tool_calls")
         
         if model_name:
             model = f"{active_provider}/{model_name}"
@@ -265,93 +287,152 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
         return # Stop processing and return to the user prompt
 
     while True:
-        response = litellm.completion(
-            model=model,
-            api_key=api_key,
-            messages=messages,
-            tools=available_tools_metadata,
-            tool_choice="auto",
-        )
-
-        choice = response.choices[0]
-        if choice.finish_reason == "tool_calls":
+        if tool_strategy == 'tool_calls':
+            response = litellm.completion(
+                model=model,
+                api_key=api_key,
+                messages=messages,
+                tools=available_tools_metadata,
+                tool_choice="auto",
+            )
+            choice = response.choices[0]
+            if choice.finish_reason != "tool_calls":
+                break # Go to final streaming response
+            
             messages.append(choice.message)
             tool_calls = choice.message.tool_calls
+        else: # xml strategy
+            response = litellm.completion(model=model, api_key=api_key, messages=messages)
+            choice = response.choices[0]
+            response_content = choice.message.content or ""
             
-            for tool_call in tool_calls:
-                tool_name = tool_call.function.name
-                tool_args = json.loads(tool_call.function.arguments)
+            messages.append(choice.message)
+            
+            tool_xml_blocks = re.findall(r'<tool_code>(.*?)</tool_code>', response_content, re.DOTALL)
+            
+            if not tool_xml_blocks:
+                break # No tools, proceed to streaming response
+            
+            # Convert XML blocks to a format that resembles native tool_calls
+            tool_calls = []
+            for tool_xml in tool_xml_blocks:
+                try:
+                    root = ET.fromstring(f"<root_tool>{tool_xml.strip()}</root_tool>")
+                    tool_call_element = root[0]
+                    tool_name = tool_call_element.tag
+                    tool_args = {child.tag: child.text for child in tool_call_element}
+                    # Create a mock tool_call object to unify processing
+                    tool_calls.append({
+                        "id": f"xml_call_{os.urandom(8).hex()}",
+                        "function": {"name": tool_name, "arguments": json.dumps(tool_args)},
+                        "type": "function",
+                    })
+                except ET.ParseError as e:
+                    console.print(f"[bold red]XML Parse Error for tool call:[/]\n{tool_xml}\nError: {e}")
+                    continue
+        
+        # --- Common Tool Execution Logic ---
+        has_executed_tool = False
+        for tool_call in tool_calls:
+            # For XML, tool_call is a dict; for native, it's an object. Access attrs consistently.
+            is_native_call = hasattr(tool_call, 'function')
+            tool_name = tool_call.function.name if is_native_call else tool_call["function"]["name"]
+            
+            try:
+                arguments_str = tool_call.function.arguments if is_native_call else tool_call["function"]["arguments"]
+                tool_args = json.loads(arguments_str)
+            except json.JSONDecodeError:
+                console.print(f"[bold red]Error:[/] Could not decode arguments for tool '{tool_name}': {arguments_str}")
+                continue
 
-                # SPECIAL HANDLING for EndTask - this will terminate the sub-agent
-                if tool_name == "EndTask":
-                    raise SubAgentEndTask(
-                        reason=tool_args.get("reason"),
-                        info=tool_args.get("info", "")
-                    )
-
-                tool_panel_content = f"[cyan]{tool_name}[/][default]({json.dumps(tool_args, indent=2)})[/]"
-                console.print(
-                    Panel(
-                        tool_panel_content,
-                        title="[bold yellow]Tool Call[/]",
-                        border_style="yellow",
-                        expand=False,
-                    )
+            # SPECIAL HANDLING for EndTask - this will terminate the sub-agent
+            if tool_name == "EndTask":
+                raise SubAgentEndTask(
+                    reason=tool_args.get("reason"),
+                    info=tool_args.get("info", "")
                 )
 
-                # SPECIAL HANDLING FOR MakeSubagent
-                if tool_name == "MakeSubagent":
-                    tool_output = run_sub_agent(
-                        mode=tool_args["mode"],
-                        prompt=tool_args["prompt"],
-                        cfg=cfg
-                    )
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "name": tool_name,
-                        "content": str(tool_output),
-                    })
-                    continue
+            tool_panel_content = f"[cyan]{tool_name}[/][default]({json.dumps(tool_args, indent=2)})[/]"
+            console.print(
+                Panel(
+                    tool_panel_content,
+                    title="[bold yellow]Tool Call[/]",
+                    border_style="yellow",
+                    expand=False,
+                )
+            )
 
-                if tool_name in DANGEROUS_TOOLS and not yolo_mode:
-                    if not Confirm.ask(
-                        f"[bold yellow]Execute the [cyan]{tool_name}[/cyan] tool with the arguments above?[/]",
-                        default=False
-                    ):
-                        console.print("[bold red]Skipping tool call.[/]")
-                        # Provide feedback to the LLM that the user cancelled
-                        tool_output = "User denied execution of this tool call."
-                        messages.append(
-                            {
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": tool_name,
-                                "content": tool_output,
-                            }
-                        )
-                        continue # Move to the next tool call or re-prompt
+            # SPECIAL HANDLING FOR MakeSubagent
+            if tool_name == "MakeSubagent":
+                tool_output = run_sub_agent(
+                    mode=tool_args["mode"],
+                    prompt=tool_args["prompt"],
+                    cfg=cfg
+                )
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id if is_native_call else tool_call["id"],
+                    "name": tool_name,
+                    "content": str(tool_output),
+                })
+                has_executed_tool = True
+                continue
 
+            if tool_name in DANGEROUS_TOOLS and not yolo_mode:
+                if not Confirm.ask(
+                    f"[bold yellow]Execute the [cyan]{tool_name}[/cyan] tool with the arguments above?[/]",
+                    default=False
+                ):
+                    console.print("[bold red]Skipping tool call.[/]")
+                    tool_output = "User denied execution of this tool call."
+                else:
+                    if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
+                        # Inject session-specific state if needed by the tool
+                        if tool_name in ["ReadFile", "ReadManyFiles"]:
+                            tool_args["read_files_in_session"] = read_files_in_session
+                        with console.status("[bold yellow]Executing tool..."):
+                            tool_output = tool_func(**tool_args)
+                    else:
+                        tool_output = f"Unknown tool '{tool_name}'"
+            else:
                 if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
-                    # Inject session-specific state if needed by the tool
                     if tool_name in ["ReadFile", "ReadManyFiles"]:
                         tool_args["read_files_in_session"] = read_files_in_session
-                    
                     with console.status("[bold yellow]Executing tool..."):
                         tool_output = tool_func(**tool_args)
-                    
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": tool_name,
-                            "content": str(tool_output),
-                        }
-                    )
                 else:
-                    console.print(f"[bold red]Warning:[/] Unknown tool '{tool_name}' called.")
+                    tool_output = f"Unknown tool '{tool_name}'"
+            
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id if is_native_call else tool_call["id"],
+                    "name": tool_name,
+                    "content": str(tool_output),
+                }
+            )
+            has_executed_tool = True
+
+        if has_executed_tool:
             continue
+        else: # No tools were run, break to final response
+            break
+
+    # This part handles the final text response from the assistant.
+    if tool_strategy == 'xml' and messages[-1]['role'] == 'assistant':
+        # For XML, we already have the complete final response. We just need to display it.
+        full_response = messages[-1].get("content", "")
+        # Remove any lingering tool code from the final output for cleaner display
+        full_response = re.sub(r'<tool_code>.*?</tool_code>', '', full_response, flags=re.DOTALL).strip()
         
+        panel = Panel(
+            Markdown(full_response, style="default", code_theme="monokai"),
+            title="[bold green]Assistant[/]",
+            border_style="green",
+        )
+        console.print(panel)
+    else:
+        # For tool_calls, or if the XML flow produced no response, we stream.
         full_response = ""
         panel = Panel(
             "",
@@ -359,6 +440,12 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
             border_style="green",
         )
         with Live(panel, refresh_per_second=10, console=console) as live:
+            # For tool_calls, we need a new completion call to get the final answer.
+            # For XML, this path is hit if the LLM responds without tool calls,
+            # so we need to stream out that response. We can't just call completion again.
+            # However, the logic for XML now appends the message and breaks, so we should have it.
+            # A second completion call is the original logic, let's stick to it for tool_calls.
+            # The XML strategy's final response is handled above. This block is now tool_calls-centric.
             stream_response = litellm.completion(
                 model=model, api_key=api_key, messages=messages, stream=True
             )
@@ -373,9 +460,9 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, yolo
                             border_style="green",
                         )
                     )
-
         messages.append({"role": "assistant", "content": full_response})
-        return messages[-1]
+
+    return messages[-1]
 
 def display_help():
     """Displays the help menu for interactive commands."""
@@ -437,15 +524,33 @@ def start_interactive_session(initial_prompt, cfg):
     """Runs the agent in interactive mode."""
     agent_mode = "code"
 
-    memories = load_memories()
-    system_prompt_template = SYSTEM_PROMPTS[agent_mode]
-    if memories:
-        system_prompt = f"### PERMANENT MEMORIES ###\n{memories}\n\n### TASK ###\n{system_prompt_template}"
-        console.print(Panel(memories, title="[bold magenta]Memories Loaded[/]", border_style="magenta", expand=False))
-    else:
-        system_prompt = system_prompt_template
+    def get_system_prompt(mode, current_cfg):
+        # Determine tool strategy from config
+        modes_cfg = current_cfg.get("modes", {})
+        global_cfg = modes_cfg.get("global", {})
+        mode_cfg = modes_cfg.get(mode, {})
+        active_provider = mode_cfg.get("active_provider") or global_cfg.get("active_provider")
+        provider_cfg = {**global_cfg.get("providers", {}).get(active_provider, {}), **mode_cfg.get("providers", {}).get(active_provider, {})}
+        tool_strategy = provider_cfg.get("tool_strategy", "tool_calls")
+        
+        memories = load_memories()
+        if memories and agent_mode == "code": # Only show memories loaded panel once at the start
+            console.print(Panel(memories, title="[bold magenta]Memories Loaded[/]", border_style="magenta", expand=False))
 
-    messages = [{"role": "system", "content": system_prompt}]
+        system_prompt_template = SYSTEM_PROMPTS[mode]
+        
+        system_prompt_parts = []
+        if tool_strategy == "xml":
+            available_tools = _get_available_tools(mode, is_sub_agent=False)
+            system_prompt_parts.append(generate_xml_tool_prompt(available_tools))
+
+        if memories:
+            system_prompt_parts.append(f"### PERMANENT MEMORIES ###\n{memories}")
+        
+        system_prompt_parts.append(f"### TASK ###\n{system_prompt_template}")
+        return "\n\n".join(filter(None, system_prompt_parts))
+
+    messages = [{"role": "system", "content": get_system_prompt(agent_mode, cfg)}]
     read_files_in_session = set()
     history = InMemoryHistory()
     yolo_mode = False
@@ -544,9 +649,7 @@ def start_interactive_session(initial_prompt, cfg):
                 parts = user_input.strip().lower().split()
                 if len(parts) == 2 and parts[1] in MODES:
                     agent_mode = parts[1]
-                    system_prompt_template = SYSTEM_PROMPTS[agent_mode]
-                    system_prompt = f"### PERMANENT MEMORIES ###\n{memories}\n\n### TASK ###\n{system_prompt_template}" if memories else system_prompt_template
-                    messages[0] = {"role": "system", "content": system_prompt}
+                    messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
                     console.print(f"Switched to [bold green]{agent_mode.capitalize()}[/bold green] mode.")
                 elif len(parts) == 1 and parts[0] == "/mode":
                     console.print(f"Current mode: {agent_mode}. Available modes: {', '.join(MODES)}. Usage: /mode <mode_name>")

@@ -155,11 +155,13 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
         model = provider_config.get("model", "Not set")
         api_key = provider_config.get("api_key")
         api_key_display = f"****{api_key[-4:]}" if api_key else "Not set (Optional)"
+        tool_strategy = mode_cfg.get("tool_strategy", "tool_calls")
 
         config_view_content = (
             f"[bold cyan]Provider:[/bold cyan] {active_provider or 'Not set'}\n"
             f"[bold cyan]Model:[/bold cyan] {model}\n"
-            f"[bold cyan]API Key:[/bold cyan] {api_key_display}"
+            f"[bold cyan]API Key:[/bold cyan] {api_key_display}\n"
+            f"[bold cyan]Tool Strategy:[/bold cyan] {tool_strategy}"
         )
         console.print(Panel(config_view_content, title=f"[bold green]Configuring '{mode_name.capitalize()}' Mode[/]", expand=False))
 
@@ -167,10 +169,11 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
             "1. Select Provider",
             "2. Edit Model",
             "3. Edit API Key",
+            "4. Edit Tool Strategy",
             None,
         ]
         # Dynamically build menu
-        next_option_num = 4
+        next_option_num = 5
         reset_option_idx, save_option_idx, discard_option_idx = None, None, None
 
         if mode_name != "global":
@@ -250,6 +253,20 @@ def _prompt_for_one_mode(config_to_edit: dict, mode_name: str, provider_models: 
                 mode_cfg["providers"].setdefault(active_provider, {})["api_key"] = new_api_key
             else:
                 mode_cfg.get("providers", {}).get(active_provider, {}).pop("api_key", None)
+            continue
+
+        elif selected_index == 3:  # Edit Tool Strategy
+            strategies = ["tool_calls", "xml"]
+            strategy_menu = TerminalMenu(
+                strategies,
+                title="Select a tool strategy",
+                menu_cursor="> ",
+                menu_cursor_style=("fg_green", "bold"),
+                menu_highlight_style=("bg_green", "fg_black"),
+            )
+            sel_strategy_idx = strategy_menu.show()
+            if sel_strategy_idx is not None:
+                mode_cfg["tool_strategy"] = strategies[sel_strategy_idx]
             continue
 
         elif selected_index == save_option_idx:  # Save and Back
