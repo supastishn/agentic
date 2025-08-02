@@ -286,9 +286,8 @@ def _get_sub_agent_system_prompt(mode: str, cfg: dict) -> str:
     modes_cfg = cfg.get("modes", {})
     global_cfg = modes_cfg.get("global", {})
     mode_cfg = modes_cfg.get(mode, {})
-    active_provider = mode_cfg.get("active_provider") or global_cfg.get("active_provider")
-    provider_cfg = {**global_cfg.get("providers", {}).get(active_provider, {}), **mode_cfg.get("providers", {}).get(active_provider, {})}
-    tool_strategy = provider_cfg.get("tool_strategy", "tool_calls")
+    # Get tool strategy from mode > global > default
+    tool_strategy = mode_cfg.get("tool_strategy") or global_cfg.get("tool_strategy") or "tool_calls"
 
     memories = load_memories()
     system_prompt_template = SYSTEM_PROMPTS.get(mode, CODE_SYSTEM_PROMPT)
@@ -365,7 +364,9 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
 
     active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
     model, api_key, api_base = None, None, None
-    tool_strategy = "tool_calls"
+    
+    # Get tool strategy from mode > global > default
+    tool_strategy = mode_config.get("tool_strategy") or global_config.get("tool_strategy") or "tool_calls"
     enable_web_search = False
 
     if active_provider:
@@ -383,7 +384,6 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
         provider_for_litellm = "openai" if active_provider == "hackclub_ai" else active_provider
         api_base = None if active_provider == "hackclub_ai" else final_provider_config.get("api_base")
 
-        tool_strategy = final_provider_config.get("tool_strategy", "tool_calls")
         enable_web_search = final_provider_config.get("enable_web_search", False)
         
         if model_name:
@@ -764,9 +764,8 @@ def start_interactive_session(initial_prompt, cfg):
         modes_cfg = current_cfg.get("modes", {})
         global_cfg = modes_cfg.get("global", {})
         mode_cfg = modes_cfg.get(mode, {})
-        active_provider = mode_cfg.get("active_provider") or global_cfg.get("active_provider")
-        provider_cfg = {**global_cfg.get("providers", {}).get(active_provider, {}), **mode_cfg.get("providers", {}).get(active_provider, {})}
-        tool_strategy = provider_cfg.get("tool_strategy", "tool_calls")
+        # Get tool strategy from mode > global > default
+        tool_strategy = mode_cfg.get("tool_strategy") or global_cfg.get("tool_strategy") or "tool_calls"
         
         memories = ""
         if memories_active:
@@ -922,7 +921,7 @@ def start_interactive_session(initial_prompt, cfg):
                 final_provider_config = {**global_provider_settings, **mode_provider_settings}
                 
                 model_name = final_provider_config.get("model")
-                tool_strategy = final_provider_config.get("tool_strategy", "tool_calls")
+                tool_strategy = mode_config.get("tool_strategy") or global_config.get("tool_strategy") or "tool_calls"
                 enable_web_search = final_provider_config.get("enable_web_search", False)
 
                 if model_name:
