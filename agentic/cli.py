@@ -16,7 +16,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.filters import is_done
+from prompt_toolkit.filters import is_done, HasHistory
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
@@ -998,6 +998,16 @@ def start_interactive_session(initial_prompt, cfg):
 
             bindings = KeyBindings()
             
+            @bindings.add("up", filter=HasHistory())
+            def _(event):
+                """Move up in history."""
+                event.current_buffer.history_backward()
+
+            @bindings.add("down", filter=HasHistory())
+            def _(event):
+                """Move down in history."""
+                event.current_buffer.history_forward()
+
             @bindings.add("c-c")
             def _(event):
                 """Handle Ctrl+C as an exit signal."""
