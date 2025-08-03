@@ -1845,23 +1845,46 @@ def start_interactive_session(initial_prompt, cfg):
 def main():
     """Main function for the agentic CLI tool."""
     # --- MCP Command Handling ---
-    mcp_parser = argparse.ArgumentParser(description="Manage MCP servers.", add_help=False)
+    mcp_parser = argparse.ArgumentParser(
+        description="Manage MCP (Model Context Protocol) servers. Configurations are layered, with 'local' overriding 'project', and 'project' overriding 'user'.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False
+    )
     mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command")
 
     # `mcp add` command
-    parser_add = mcp_subparsers.add_parser("add", help="Add a new MCP server.")
+    parser_add = mcp_subparsers.add_parser(
+        "add",
+        help="Add or update an MCP server configuration in a specific scope.",
+        description=(
+            "Adds or updates an MCP server. The configuration is saved to a JSON file\n"
+            "corresponding to the chosen scope:\n"
+            "  - user: ~/.agentic-pypi/mcp.json (globally available)\n"
+            "  - project: ./.agentic.mcp.json (for this project, can be checked into git)\n"
+            "  - local: ~/.agentic-pypi/data/mcp/<project_name>.mcp.json (for this project, not in git)"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser_add.add_argument("name", help="A unique name for the server.")
     parser_add.add_argument("url", help="The URL of the HTTP MCP server.")
-    parser_add.add_argument("--scope", choices=["user", "project", "local"], default="local", help="The scope to save the server configuration to.")
-    parser_add.add_argument("--header", action="append", help="A header to send with requests (e.g., 'X-API-Key: value'). Can be specified multiple times.")
+    parser_add.add_argument("--scope", choices=["user", "project", "local"], default="local", help="Where to save the configuration. 'user' is global, 'project' is for the repo, 'local' is for this machine only.")
+    parser_add.add_argument("--header", action="append", help="A header to send with requests (e.g., 'X-API-Key:my-secret-key'). Can be specified multiple times.")
     
     # `mcp list` command
-    mcp_subparsers.add_parser("list", help="List all configured MCP servers.")
+    mcp_subparsers.add_parser(
+        "list",
+        help="List all configured MCP servers from all scopes.",
+        description="Displays a merged list of all available MCP servers, showing which scope each server is loaded from. Scopes are layered: local > project > user."
+    )
 
     # `mcp remove` command
-    parser_remove = mcp_subparsers.add_parser("remove", help="Remove an MCP server.")
+    parser_remove = mcp_subparsers.add_parser(
+        "remove",
+        help="Remove an MCP server from a specific scope's configuration file.",
+        description="Removes a server configuration from a specific JSON file. You must specify the scope to identify which file to modify."
+    )
     parser_remove.add_argument("name", help="The name of the server to remove.")
-    parser_remove.add_argument("--scope", choices=["user", "project", "local"], required=True, help="The scope from which to remove the server.")
+    parser_remove.add_argument("--scope", choices=["user", "project", "local"], required=True, help="The specific scope from which to remove the server.")
 
     # --- Main Parser ---
     parser = argparse.ArgumentParser(
@@ -1881,7 +1904,7 @@ def main():
     subparsers.add_parser("config", help="Open the configuration prompt.")
     
     # MCP command (as a subcommand of the main parser)
-    mcp_command_parser = subparsers.add_parser("mcp", help="Manage MCP servers.")
+    mcp_command_parser = subparsers.add_parser("mcp", help="Manage MCP (Model Context Protocol) servers. Use 'agentic mcp --help' for more details.")
     mcp_command_parser.add_argument("mcp_command", choices=["add", "list", "remove"])
     mcp_command_parser.add_argument("mcp_args", nargs=argparse.REMAINDER)
 
