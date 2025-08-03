@@ -1140,6 +1140,80 @@ def _prompt_for_misc_settings(config_to_edit: dict):
         elif selected_index == 2:
             break
 
+def _prompt_for_mcp_settings(config_to_edit: dict):
+    """Interactively prompts for MCP server configuration."""
+    console = Console()
+    
+    settings = config_to_edit.setdefault("mcp_servers", {})
+    original_settings = json.loads(json.dumps(settings))
+
+    while True:
+        console.clear()
+        
+        server_list_content = []
+        if settings:
+            for name, url in sorted(settings.items()):
+                server_list_content.append(f"[cyan]{name}[/]: {url}")
+        else:
+            server_list_content.append("[dim]No MCP servers configured.[/dim]")
+
+        console.print(Panel("\n".join(server_list_content), title="[bold green]Configured MCP Servers[/]", expand=False))
+
+        menu_items = [
+            "1. Add a new MCP server",
+            "2. Remove an MCP server",
+            None,
+            "3. Back (Save Changes)",
+            "4. Back (Discard Changes)",
+        ]
+
+        terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
+        selected_index = terminal_menu.show()
+
+        if selected_index is None or selected_index == 3: # Discard is menu item 4, but index 3
+            config_to_edit["mcp_servers"] = original_settings
+            if not config_to_edit["mcp_servers"]:
+                config_to_edit.pop("mcp_servers", None)
+            break
+        
+        if selected_index == 0: # Add
+            server_name = console.input("Enter a unique name for the server: ").strip()
+            if not server_name:
+                console.print("\n[bold red]Server name cannot be empty.[/bold red]")
+                console.input("Press Enter to continue...")
+                continue
+            if server_name in settings:
+                console.print(f"\n[bold red]A server with the name '{server_name}' already exists.[/bold red]")
+                console.input("Press Enter to continue...")
+                continue
+            
+            server_url = console.input(f"Enter the full URL for '{server_name}': ").strip()
+            if not server_url:
+                console.print("\n[bold red]Server URL cannot be empty.[/bold red]")
+                console.input("Press Enter to continue...")
+                continue
+
+            settings[server_name] = server_url
+            continue
+
+        elif selected_index == 1: # Remove
+            if not settings:
+                console.print("\n[yellow]No servers to remove.[/yellow]")
+                console.input("Press Enter to continue...")
+                continue
+            
+            server_names = sorted(list(settings.keys()))
+            remove_menu = TerminalMenu(server_names, title="Select a server to remove")
+            remove_idx = remove_menu.show()
+
+            if remove_idx is not None:
+                server_to_remove = server_names[remove_idx]
+                del settings[server_to_remove]
+            continue
+        
+        elif selected_index == 2: # Save
+            break
+
 def _prompt_for_other_settings(config_to_edit: dict):
     """Shows a submenu for various settings."""
     console = Console()

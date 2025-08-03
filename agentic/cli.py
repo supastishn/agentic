@@ -132,6 +132,7 @@ CODE_SYSTEM_PROMPT = (
     "- `WriteFile`: Creates a new file or completely overwrites an existing one. Use with caution.\n"
     "- `Edit`: Performs a targeted search-and-replace. This is safer for small changes.\n"
     "- `Git`: Use this to manage version control. `add` and `commit` changes frequently. Use `diff` to review your work and `log` to see history.\n"
+    "- `McpListTools` & `McpRunTool`: Use these to interact with external systems via the Model Context Protocol (MCP). First, use `McpListTools` with a configured server name to see what tools it offers. Then, use `McpRunTool` to execute a specific tool with the required parameters.\n"
     "- `Shell`: Executes shell commands. Powerful but dangerous. Use it only when necessary.\n"
     "- `MakeTodoList`, `CheckTodoList`, `MarkTodoItemComplete`: Use these tools to create and manage todo lists for complex tasks. Break down large tasks into smaller items and track progress.\n"
     "- `EndTask`: You MUST call this tool to signal you have finished your task. Provide a clear reason ('success' or 'failure') and a summary of your work in the 'info' field.\n\n"
@@ -148,6 +149,7 @@ ASK_SYSTEM_PROMPT = (
     "4. **Synthesize and Answer:** Combine the information you've gathered to provide a comprehensive and clear answer. Use `Think` to structure your thoughts.\n\n"
     "**Tool Guidelines:**\n"
     "- You do **not** have access to tools that modify files (`WriteFile`, `Edit`) or execute shell commands (`Shell`).\n"
+    "- `McpListTools` & `McpRunTool`: Use these to interact with external systems via the Model Context Protocol (MCP) to gather information.\n"
     "- Focus on providing information and answering questions."
 )
 
@@ -164,6 +166,7 @@ ARCHITECT_SYSTEM_PROMPT = (
     "**Tool Guidelines:**\n"
     "- Your primary tool is `Think` to outline your architectural plan.\n"
     "- You can read files, but you cannot write or edit them. You cannot use `Shell`.\n"
+    "- `McpListTools` & `McpRunTool`: Use these to inspect external systems or data sources that may influence the architectural plan.\n"
     "- `EndTask`: You MUST use this tool to submit your final plan. Put the complete plan in the 'info' parameter.\n"
     "- Your final output should be a plan, not executable code."
 )
@@ -178,6 +181,7 @@ AGENT_MAKER_SYSTEM_PROMPT = (
     "4. **Consult:** Use `ReadFolder`, `ReadFile`, and `WebFetch` to gather any information needed to create effective prompts for your sub-agents.\n\n"
     "**Tool Guidelines:**\n"
     "- `make_subagent`: Your primary tool for creating other agents. The tool returns a JSON string with 'reason' and 'info' fields. You must check the 'reason' to see if the sub-agent succeeded. If it failed, you may need to debug or create a new sub-agent with a corrected prompt.\n"
+    "- `McpListTools` & `McpRunTool`: Use these to interact with external systems to gather information required for creating sub-agent prompts.\n"
     "- `MakeTodoList`, `CheckTodoList`, `MarkTodoItemComplete`: Use these tools to create and manage todo lists for complex multi-step processes. Break down large tasks into smaller items and track progress.\n"
     "- You do not write code or perform edits directly. You delegate these tasks.\n"
     "- Forbidden sub-agent modes: 'ask', 'agent-maker'."
