@@ -700,7 +700,7 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
             elif tool_name in DANGEROUS_TOOLS and not yolo_mode:
                 if not Confirm.ask(
                     f"[bold yellow]Execute the [cyan]{tool_name}[/cyan] tool with the arguments above?[/]",
-                    default=False
+                    default=True
                 ):
                     console.print("[bold red]Skipping tool call.[/]")
                     tool_output = "User denied execution of this tool call."
@@ -716,15 +716,35 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                     else:
                         tool_output = f"Unknown tool '{tool_name}'"
             else: # Not dangerous or YOLO mode is on
-                if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
-                    if tool_name in ["WriteFile", "Edit"]:
-                        session_stats["edit_count"] = session_stats.get("edit_count", 0) + 1
-                    if tool_name in ["ReadFile", "ReadManyFiles"]:
-                        tool_args["read_files_in_session"] = read_files_in_session
-                    with console.status("[bold yellow]Executing tool..."):
-                        tool_output = tool_func(**tool_args)
+                if tool_name in DANGEROUS_TOOLS and not yolo_mode:
+                    # This case handles when yolo_mode is False but we still need confirmation
+                    if not Confirm.ask(
+                        f"[bold yellow]Execute the [cyan]{tool_name}[/cyan] tool with the arguments above?[/]",
+                        default=True
+                    ):
+                        console.print("[bold red]Skipping tool call.[/]")
+                        tool_output = "User denied execution of this tool call."
+                    else:
+                        if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
+                            if tool_name in ["WriteFile", "Edit"]:
+                                session_stats["edit_count"] = session_stats.get("edit_count", 0) + 1
+                            if tool_name in ["ReadFile", "ReadManyFiles"]:
+                                tool_args["read_files_in_session"] = read_files_in_session
+                            with console.status("[bold yellow]Executing tool..."):
+                                tool_output = tool_func(**tool_args)
+                        else:
+                            tool_output = f"Unknown tool '{tool_name}'"
                 else:
-                    tool_output = f"Unknown tool '{tool_name}'"
+                    # YOLO mode is on or tool is not dangerous - execute without confirmation
+                    if tool_func := tools.AVAILABLE_TOOLS.get(tool_name):
+                        if tool_name in ["WriteFile", "Edit"]:
+                            session_stats["edit_count"] = session_stats.get("edit_count", 0) + 1
+                        if tool_name in ["ReadFile", "ReadManyFiles"]:
+                            tool_args["read_files_in_session"] = read_files_in_session
+                        with console.status("[bold yellow]Executing tool..."):
+                            tool_output = tool_func(**tool_args)
+                    else:
+                        tool_output = f"Unknown tool '{tool_name}'"
             
             # --- Append tool output based on strategy ---
             if tool_strategy == "xml":
