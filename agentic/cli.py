@@ -1844,10 +1844,87 @@ def start_interactive_session(initial_prompt, cfg):
 
 def main():
     """Main function for the agentic CLI tool."""
+    # --- MCP Command Handling ---
+    mcp_parser = argparse.ArgumentParser(description="Manage MCP servers.", add_help=False)
+    mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command")
+
+    # `mcp add` command
+    parser_add = mcp_subparsers.add_parser("add", help="Add a new MCP server.")
+    parser_add.add_argument("name", help="A unique name for the server.")
+    parser_add.add_argument("url", help="The URL of the HTTP MCP server.")
+    parser_add.add_argument("--scope", choices=["user", "project", "local"], default="local", help="The scope to save the server configuration to.")
+    parser_add.add_argument("--header", action="append", help="A header to send with requests (e.g., 'X-API-Key: value'). Can be specified multiple times.")
+    
+    # `mcp list` command
+    mcp_subparsers.add_parser("list", help="List all configured MCP servers.")
+
+    # `mcp remove` command
+    parser_remove = mcp_subparsers.add_parser("remove", help="Remove an MCP server.")
+    parser_remove.add_argument("name", help="The name of the server to remove.")
+    parser_remove.add_argument("--scope", choices=["user", "project", "local"], required=True, help="The scope from which to remove the server.")
+
+    # --- Main Parser ---
+    parser = argparse.ArgumentParser(
+        description="A command-line coding agent that uses LiteLLM."
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # Interactive session (default command)
+    interactive_parser = subparsers.add_parser("interactive", help="Start an interactive session (default).")
+    interactive_parser.add_argument(
+        "prompt", type=str, nargs="?",
+        default=sys.stdin.read() if not sys.stdin.isatty() else None,
+        help="The initial prompt for the interactive session. Can be passed as an argument or piped via stdin.",
+    )
+
+    # Config command
+    subparsers.add_parser("config", help="Open the configuration prompt.")
+    
+    # MCP command (as a subcommand of the main parser)
+    mcp_command_parser = subparsers.add_parser("mcp", help="Manage MCP servers.")
+    mcp_command_parser.add_argument("mcp_command", choices=["add", "list", "remove"])
+    mcp_command_parser.add_argument("mcp_args", nargs=argparse.REMAINDER)
+
+
+    # Check if a command is provided, otherwise default to interactive
+    if len(sys.argv) == 1 or (len(sys.argv) > 1 and sys.argv[1] not in subparsers.choices):
+        # Insert 'interactive' as the default command
+        sys.argv.insert(1, 'interactive')
+
+    args = parser.parse_args()
+    
+    if args.command == "mcp":
+        # Re-parse the mcp arguments with the dedicated mcp parser
+        mcp_args = mcp_parser.parse_args([args.mcp_command] + args.mcp_args)
+        
+        if mcp_args.mcp_command == "add":
+            headers = {k: v for k, v in (h.split(':', 1) for h in mcp_args.header)} if mcp_args.header else {}
+            server_config = {
+                "transport": "http",
+                "url": mcp_args.url,
+                "headers": headers
+            }
+            result = mcp.save_mcp_server(mcp_args.name, server_config, mcp_args.scope)
+            console.print(result)
+        
+        elif mcp_args.mcp_command == "list":
+            servers = mcp.load_mcp_servers()
+            if not servers:
+                console.print("[yellow]No MCP servers configured.[/yellow]")
+            else:
+                for name, config in sorted(servers.items()):
+                    console.print(f"[bold cyan]{name}[/bold cyan]: {config.get('url')}")
+        
+        elif mcp_args.mcp_command == "remove":
+            result = mcp.remove_mcp_server(mcp_args.name, mcp_args.scope)
+            console.print(result)
+        
+        sys.exit(0)
+
     cfg = config.load_config()
 
     if not cfg: # Truly empty config, first run
-        console.print("[bold yellow]Welcome to Agentic! No configuration found, setting up with default (Hackclub AI).[/]")
+        console.print("[bold yellow]Welcome to Agentic! No configuration found, setting up with default (Hackclub AI).[/bold yellow]")
         try:
             HACKCLUB_API_BASE = "https://ai.hackclub.com"
             model_name = "AI Hackclub"
@@ -1880,23 +1957,11 @@ def main():
             console.print("[bold red]Active provider is not fully configured. Exiting.[/bold red]")
             sys.exit(1)
 
-    parser = argparse.ArgumentParser(
-        description="A command-line coding agent that uses LiteLLM."
-    )
-    parser.add_argument(
-        "prompt", type=str, nargs="?",
-        default=sys.stdin.read() if not sys.stdin.isatty() else None,
-        help="The initial prompt for the interactive session. Can be passed as an argument or piped via stdin.",
-    )
-    parser.add_argument(
-        "--config", action="store_true", help="Open the configuration prompt."
-    )
-    args = parser.parse_args()
-
-    if args.config:
+    if args.command == "config":
         config.prompt_for_config()
         sys.exit(0)
 
+    # This handles the default 'interactive' command
     console.print(ASCII_LOGO)
     console.print(
         Panel(
