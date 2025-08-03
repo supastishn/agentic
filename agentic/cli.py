@@ -49,7 +49,7 @@ class HasHistory(Filter):
     Filter that is `True` if the current buffer has a history.
     """
     def __call__(self) -> bool:
-        return get_app().current_buffer.history.get_item_count() > 0
+        return len(get_app().current_buffer.history.get_strings()) > 0
     def __repr__(self) -> str:
         return "has_history"
 has_history = HasHistory()
