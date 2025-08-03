@@ -10,7 +10,7 @@ from rich.console import Console
 def _get_config_paths() -> dict[str, Path]:
     """Returns the paths for user, project, and local MCP config files."""
     project_root = Path(os.getcwd())
-    config_dir = Path.home() / ".agentic-pypi"
+    config_dir = Path.home() / ".agentic-cli-coder"
     
     # Sanitize project name for use in a file path
     safe_project_name = "".join(c for c in project_root.name if c.isalnum() or c in ('_', '-')).rstrip()

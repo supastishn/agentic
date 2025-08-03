@@ -1,6 +1,6 @@
-# Agentic
+# agentic-cli-coder
 
-An open-source, powerful, and versatile coding agent for your terminal. Agentic is designed to be your primary AI assistant for software development, providing a rich set of tools and features to accelerate your workflow right from the command line.
+An open-source, powerful, and versatile coding agent for your terminal. agentic-cli-coder is designed to be your primary AI assistant for software development, providing a rich set of tools and features to accelerate your workflow right from the command line.
 
 ![Agentic Demo](https://user-images.githubusercontent.com/12345/placeholder.gif) <!-- Placeholder: Replace with an actual demo GIF -->
 
@@ -23,11 +23,11 @@ An open-source, powerful, and versatile coding agent for your terminal. Agentic 
 
 ## 🚀 Installation
 
-Agentic is available on PyPI.
+agentic-cli-coder is available on PyPI.
 
 1.  **Install the package:**
     ```bash
-    pip install Agent-ic
+    pip install agentic-cli-coder
     ```
 
 2.  **Install browser drivers for the `Browser` tool:**
@@ -84,7 +84,7 @@ cat my_file.py | agentic "Refactor this code to be more idiomatic."
 
 ## ⚙️ Configuration
 
-Agentic stores its configuration in `~/.agentic-pypi/`.
+agentic-cli-coder stores its configuration in `~/.agentic-cli-coder/`.
 - `config.encrypted`: Encrypted file containing your settings and API keys.
 - `config.key`: The local encryption key for your configuration.
 - `data/`: Directory for persistent memories and RAG indexes.

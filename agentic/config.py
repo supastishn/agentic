@@ -98,7 +98,7 @@ def _get_provider_models() -> dict:
     return provider_models_info
 
 # --- Constants ---
-CONFIG_DIR = Path.home() / ".agentic-pypi"
+CONFIG_DIR = Path.home() / ".agentic-cli-coder"
 DATA_DIR = CONFIG_DIR / "data"
 CONFIG_FILE = CONFIG_DIR / "config.encrypted"
 KEY_FILE = CONFIG_DIR / "config.key"
