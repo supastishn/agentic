@@ -817,7 +817,12 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
             pass
         messages.append({"role": "assistant", "content": full_response})
 
-    return messages[-1]
+    # For interactive mode (not sub-agent), return the message directly
+    if is_sub_agent:
+        return messages[-1]
+    else:
+        # Just return None for interactive mode to indicate normal completion
+        return None
 
 def display_help():
     """Displays the help menu for interactive commands."""
