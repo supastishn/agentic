@@ -27,6 +27,7 @@ from prompt_toolkit.formatted_text import to_formatted_text
 
 from . import tools
 from . import config
+from . import mcp # Add this import
 from .rag import CodeRAG
 from .tools import generate_xml_tool_prompt
 from prompt_toolkit.filters import Filter

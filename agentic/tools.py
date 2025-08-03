@@ -326,29 +326,20 @@ def mcp_list_tools(server_name: str) -> str:
     """
     Lists the available tools on a registered MCP (Model Context Protocol) server.
     """
-    cfg = config.load_config()
-    servers = cfg.get("mcp_servers", {})
-    server_url = servers.get(server_name)
-    if not server_url:
-        return f"Error: MCP server '{server_name}' not found in configuration."
-    return mcp.list_server_tools(server_url)
+    # This now directly calls the refactored mcp function.
+    return mcp.list_server_tools(server_name)
 
 def mcp_run_tool(server_name: str, tool_name: str, parameters: str) -> str:
     """
     Runs a tool on a registered MCP (Model Context Protocol) server.
     """
-    cfg = config.load_config()
-    servers = cfg.get("mcp_servers", {})
-    server_url = servers.get(server_name)
-    if not server_url:
-        return f"Error: MCP server '{server_name}' not found in configuration."
-
     try:
         params_dict = json.loads(parameters)
     except json.JSONDecodeError:
         return "Error: The 'parameters' argument must be a valid JSON string. Example: '{\"key\": \"value\"}'"
 
-    return mcp.run_server_tool(server_url, tool_name, params_dict)
+    # This now directly calls the refactored mcp function.
+    return mcp.run_server_tool(server_name, tool_name, params_dict)
 
 def save_memory(text: str, scope: str = "project", source: str = "llm") -> str:
     """
