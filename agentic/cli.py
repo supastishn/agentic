@@ -1865,54 +1865,51 @@ def main():
     mcp_parser = subparsers.add_parser(
         "mcp",
         help="Configure and manage MCP servers",
-        description="Configure and manage MCP (Model Context Protocol) servers. Configurations are layered, with 'local' overriding 'project', and 'project' overriding 'user'.",
+        description="Configure and manage MCP servers",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command", title="Commands", required=True)
+    mcp_parser.usage = "agentic mcp [options] [command]"
+    mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command", title="Commands")
+
+    # `mcp serve` command
+    mcp_subparsers.add_parser(
+        "serve",
+        help="Start the Claude Code MCP server"
+    )
 
     # `mcp add` command
     parser_add = mcp_subparsers.add_parser(
         "add",
-        help="Add or update an MCP server configuration.",
-        description=(
-            "Adds or updates an MCP server for HTTP transport. The configuration is saved to a JSON file\n"
-            "corresponding to the chosen scope:\n"
-            "  - user: ~/.agentic-pypi/mcp.json (globally available)\n"
-            "  - project: ./.agentic.mcp.json (for this project, can be checked into git)\n"
-            "  - local: ~/.agentic-pypi/data/mcp/<project_name>.mcp.json (for this project, not in git)"
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        help="Add a server"
     )
     parser_add.add_argument("name", help="A unique name for the server.")
-    parser_add.add_argument("url", help="The URL of the HTTP MCP server.")
+    parser_add.add_argument("commandOrUrl", help="The command or URL of the server.")
+    parser_add.add_argument("args", nargs=argparse.REMAINDER)
     parser_add.add_argument("--scope", choices=["user", "project", "local"], default="local", help="Where to save the configuration. 'user' is global, 'project' is for the repo, 'local' is for this machine only.")
     parser_add.add_argument("--header", action="append", help="A header to send with requests (e.g., 'X-API-Key:my-secret-key'). Can be specified multiple times.")
 
     # `mcp remove` command
     parser_remove = mcp_subparsers.add_parser(
         "remove",
-        help="Remove an MCP server from a specific scope.",
-        description="Removes a server configuration from a specific JSON file. You must specify the scope to identify which file to modify."
+        help="Remove an MCP server"
     )
     parser_remove.add_argument("name", help="The name of the server to remove.")
-    parser_remove.add_argument("--scope", choices=["user", "project", "local"], required=True, help="The specific scope from which to remove the server.")
+    parser_remove.add_argument("--scope", choices=["user", "project", "local"], help="The specific scope from which to remove the server.")
 
     # `mcp list` command
     mcp_subparsers.add_parser(
         "list",
-        help="List all configured MCP servers.",
-        description="Displays a merged list of all available MCP servers, showing which scope each server is loaded from. Scopes are layered: local > project > user."
+        help="List configured MCP servers"
     )
 
     # `mcp get` command
-    parser_get = mcp_subparsers.add_parser("get", help="Get details for a configured MCP server.")
+    parser_get = mcp_subparsers.add_parser("get", help="Get details about an MCP server")
     parser_get.add_argument("name", help="The name of the server to get.")
     
     # `mcp add-json` command
     parser_add_json = mcp_subparsers.add_parser(
         "add-json",
-        help="Add an MCP server (stdio or SSE) with a JSON string.",
-        description="Adds a server with a raw JSON configuration. This is useful for setting up non-HTTP transports like 'stdio' or 'sse'."
+        help="Add an MCP server (stdio or SSE) with a JSON string"
     )
     parser_add_json.add_argument("name", help="A unique name for the server.")
     parser_add_json.add_argument("json", help="The JSON configuration for the server.")
@@ -1921,9 +1918,15 @@ def main():
     # `mcp add-from-claude-desktop` command
     mcp_subparsers.add_parser(
         "add-from-claude-desktop",
-        help="Import MCP servers from Claude Desktop.",
-        description="Finds the Claude Code configuration file and copies any MCP servers into the 'user' scope config for agentic."
+        help="Import MCP servers from Claude Desktop (Mac and WSL only)"
     )
+
+    mcp_subparsers.add_parser(
+        "reset-project-choices",
+        help="Reset all approved and rejected project-scoped (.mcp.json) servers within this project"
+    )
+
+    mcp_subparsers.add_parser("help", help="display help for command")
 
 
     # Check if a command is provided, otherwise default to interactive
@@ -1934,13 +1937,23 @@ def main():
     args = parser.parse_args()
     
     if args.command == "mcp":
+        if not args.mcp_command or args.mcp_command == "help":
+            mcp_parser.print_help()
+            sys.exit(0)
+
         if args.mcp_command == "add":
             headers = {k: v for k, v in (h.split(':', 1) for h in args.header)} if args.header else {}
-            server_config = {
-                "transport": "http",
-                "url": args.url,
-                "headers": headers
-            }
+            if args.args:
+                server_config = {
+                    "transport": "stdio",
+                    "command": [args.commandOrUrl] + args.args
+                }
+            else:
+                server_config = {
+                    "transport": "http",
+                    "url": args.commandOrUrl,
+                    "headers": headers
+                }
             result = mcp.save_mcp_server(args.name, server_config, args.scope)
             console.print(result)
         
@@ -2008,6 +2021,12 @@ def main():
         
         elif args.mcp_command == "add-from-claude-desktop":
             mcp.copy_claude_code_mcp_config()
+
+        elif args.mcp_command == "serve":
+            console.print("The 'serve' command is not yet implemented.")
+
+        elif args.mcp_command == "reset-project-choices":
+            console.print("The 'reset-project-choices' command is not yet implemented.")
         
         sys.exit(0)
 
