@@ -488,32 +488,46 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
     global_config = modes.get("global", {})
     mode_config = modes.get(agent_mode, {})
 
-    active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
-    model, api_key, api_base = None, None, None
-    
-    # Get tool strategy from mode > global > default
-    tool_strategy = mode_config.get("tool_strategy") or global_config.get("tool_strategy") or "tool_calls"
-    enable_web_search = False
-
-    if active_provider:
-        # Mode-specific provider settings override global ones
-        global_provider_settings = global_config.get("providers", {}).get(active_provider, {})
-        mode_provider_settings = mode_config.get("providers", {}).get(active_provider, {})
-        
-        # Merge settings, with mode-specific taking precedence
-        final_provider_config = {**global_provider_settings, **mode_provider_settings}
-        
-        model_name = final_provider_config.get("model")
-        api_key = final_provider_config.get("api_key") # Can be None
-        
-        # Special handling for hackclub_ai
-        provider_for_litellm = "openai" if active_provider == "hackclub_ai" else active_provider
-        api_base = None if active_provider == "hackclub_ai" else final_provider_config.get("api_base")
-
-        enable_web_search = final_provider_config.get("enable_web_search", False)
-        
+    # Check for temporary model override
+    temp_model = cfg.get("temp_model")
+    if temp_model:
+        active_provider = temp_model["provider"]
+        model_name = temp_model["model"]
+        api_key = _find_api_key_for_provider(cfg, active_provider)
+        # For temporary models, use defaults
+        tool_strategy = "tool_calls"
+        enable_web_search = False
+        api_base = None
         if model_name:
+            provider_for_litellm = "openai" if active_provider == "hackclub_ai" else active_provider
             model = f"{provider_for_litellm}/{model_name}"
+    else:
+        active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
+        model, api_key, api_base = None, None, None
+        
+        # Get tool strategy from mode > global > default
+        tool_strategy = mode_config.get("tool_strategy") or global_config.get("tool_strategy") or "tool_calls"
+        enable_web_search = False
+
+        if active_provider:
+            # Mode-specific provider settings override global ones
+            global_provider_settings = global_config.get("providers", {}).get(active_provider, {})
+            mode_provider_settings = mode_config.get("providers", {}).get(active_provider, {})
+            
+            # Merge settings, with mode-specific taking precedence
+            final_provider_config = {**global_provider_settings, **mode_provider_settings}
+            
+            model_name = final_provider_config.get("model")
+            api_key = final_provider_config.get("api_key") # Can be None
+            
+            # Special handling for hackclub_ai
+            provider_for_litellm = "openai" if active_provider == "hackclub_ai" else active_provider
+            api_base = None if active_provider == "hackclub_ai" else final_provider_config.get("api_base")
+
+            enable_web_search = final_provider_config.get("enable_web_search", False)
+            
+            if model_name:
+                model = f"{provider_for_litellm}/{model_name}"
 
     if not model: # Model is required, API key is not
         console.print(f"[bold red]Error:[/] Agent mode '{agent_mode}' is not configured (or is missing a model).")
@@ -956,8 +970,18 @@ def start_interactive_session(initial_prompt, cfg):
         modes_cfg = current_cfg.get("modes", {})
         global_cfg = modes_cfg.get("global", {})
         mode_cfg = modes_cfg.get(mode, {})
-        # Get tool strategy from mode > global > default
-        tool_strategy = mode_cfg.get("tool_strategy") or global_cfg.get("tool_strategy") or "tool_calls"
+        
+        # Check for temporary model override
+        temp_model = current_cfg.get("temp_model")
+        if temp_model:
+            # Use temporary model settings
+            active_provider = temp_model["provider"]
+            model_name = temp_model["model"]
+            # For temporary models, default to tool_calls strategy
+            tool_strategy = "tool_calls"
+        else:
+            # Get tool strategy from mode > global > default
+            tool_strategy = mode_cfg.get("tool_strategy") or global_cfg.get("tool_strategy") or "tool_calls"
         
         memories = ""
         if memories_active:
@@ -1115,24 +1139,44 @@ def start_interactive_session(initial_prompt, cfg):
             modes = cfg.get("modes", {})
             global_config = modes.get("global", {})
             mode_config = modes.get(agent_mode, {})
-            active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
             
-            model_name, tool_strategy, enable_web_search = None, "tool_calls", False
+            # Check for temporary model override
+            temp_model = cfg.get("temp_model")
+            if temp_model:
+                active_provider = temp_model["provider"]
+                model_name = temp_model["model"]
+                tool_strategy = "tool_calls"  # Default for temporary models
+                enable_web_search = False
+            else:
+                active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
+                model_name, tool_strategy, enable_web_search = None, "tool_calls", False
+            
             model_capabilities = {}
             
             if active_provider:
-                global_provider_settings = global_config.get("providers", {}).get(active_provider, {})
-                mode_provider_settings = mode_config.get("providers", {}).get(active_provider, {})
-                final_provider_config = {**global_provider_settings, **mode_provider_settings}
-                
-                model_name = final_provider_config.get("model")
-                tool_strategy = mode_config.get("tool_strategy") or global_config.get("tool_strategy") or "tool_calls"
-                enable_web_search = final_provider_config.get("enable_web_search", False)
-
-                if model_name:
+                if temp_model:
+                    # For temporary models, we don't have full config, so we use defaults
+                    model_name = temp_model["model"]
+                    tool_strategy = "tool_calls"
+                    enable_web_search = False
+                    
+                    # Try to get model capabilities from the provider models info
                     all_models_info = config._get_provider_models()
                     lookup_provider = "openai" if active_provider == "hackclub_ai" else active_provider
                     model_capabilities = all_models_info.get(lookup_provider, {}).get(model_name, {})
+                else:
+                    global_provider_settings = global_config.get("providers", {}).get(active_provider, {})
+                    mode_provider_settings = mode_config.get("providers", {}).get(active_provider, {})
+                    final_provider_config = {**global_provider_settings, **mode_provider_settings}
+                    
+                    model_name = final_provider_config.get("model")
+                    tool_strategy = mode_config.get("tool_strategy") or global_config.get("tool_strategy") or "tool_calls"
+                    enable_web_search = final_provider_config.get("enable_web_search", False)
+
+                    if model_name:
+                        all_models_info = config._get_provider_models()
+                        lookup_provider = "openai" if active_provider == "hackclub_ai" else active_provider
+                        model_capabilities = all_models_info.get(lookup_provider, {}).get(model_name, {})
 
             supports_tool_calls = model_capabilities.get("supports_function_calling", False)
             supports_web_search = model_capabilities.get("supports_web_search", False)
@@ -1158,6 +1202,11 @@ def start_interactive_session(initial_prompt, cfg):
                 token_display = f"Ctx: {current_tokens / 1000:.1f}k" if current_tokens > 0 else "Ctx: N/A"
 
             cost_display = f"Cost: ${session_stats['cost']:.3f}"
+            
+            # Add model display to toolbar
+            model_display = f"{active_provider}/{model_name}" if active_provider and model_name else "No model"
+            if temp_model:
+                model_display = f"[TEMP] {model_display}"
 
             input_frame = Frame(
                 Window(
@@ -1169,7 +1218,7 @@ def start_interactive_session(initial_prompt, cfg):
                 style="fg:cyan"
             )
 
-            toolbar_text = f"<b>({agent_mode})</b> {token_display} | {cost_display} | Tools {tool_status} Search {search_status} | <b>[Alt+Enter]</b> new line, <b>/help</b>"
+            toolbar_text = f"<b>({agent_mode})</b> {model_display} | {token_display} | {cost_display} | Tools {tool_status} Search {search_status} | <b>[Alt+Enter]</b> new line, <b>/help</b>"
             toolbar = ConditionalContainer(
                 Window(
                     content=FormattedTextControl(to_formatted_text(HTML(toolbar_text))),
@@ -1537,6 +1586,64 @@ def start_interactive_session(initial_prompt, cfg):
                 _update_environment_for_mode(agent_mode, cfg)
                 # Reload system prompt in case settings affecting it (like tools) changed
                 messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
+                continue
+            elif user_input.lower().startswith("/model"):
+                parts = user_input.strip().split()
+                if len(parts) == 1:
+                    # Show current model
+                    modes = cfg.get("modes", {})
+                    global_config = modes.get("global", {})
+                    mode_config = modes.get(agent_mode, {})
+                    active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
+                    
+                    if active_provider:
+                        global_provider_settings = global_config.get("providers", {}).get(active_provider, {})
+                        mode_provider_settings = mode_config.get("providers", {}).get(active_provider, {})
+                        final_provider_config = {**global_provider_settings, **mode_provider_settings}
+                        model_name = final_provider_config.get("model")
+                        if model_name:
+                            console.print(f"Current model: {active_provider}/{model_name}")
+                        else:
+                            console.print("No model configured for current mode.")
+                    else:
+                        console.print("No provider configured for current mode.")
+                    continue
+                
+                model_input = parts[1]
+                if model_input.lower() in ["default", "reset"]:
+                    # Reset to default model for the current mode
+                    modes = cfg.get("modes", {})
+                    global_config = modes.get("global", {})
+                    mode_config = modes.get(agent_mode, {})
+                    
+                    # Remove any temporary model override
+                    if "temp_model" in cfg:
+                        del cfg["temp_model"]
+                    
+                    _update_environment_for_mode(agent_mode, cfg)
+                    messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
+                    console.print(f"[bold green]Model reset to default for {agent_mode} mode.[/bold green]")
+                    continue
+                
+                # Set temporary model override
+                if "/" not in model_input:
+                    console.print("[bold red]Error:[/] Model must be in format 'provider/model_name'")
+                    continue
+                    
+                provider, model_name = model_input.split("/", 1)
+                if not provider or not model_name:
+                    console.print("[bold red]Error:[/] Invalid model format. Use 'provider/model_name'")
+                    continue
+                
+                # Store temporary model override
+                cfg["temp_model"] = {
+                    "provider": provider,
+                    "model": model_name
+                }
+                
+                _update_environment_for_mode(agent_mode, cfg)
+                messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
+                console.print(f"[bold green]Model temporarily set to: {provider}/{model_name}[/bold green]")
                 continue
             elif user_input.startswith('!'):
                 command = user_input[1:].strip()
