@@ -344,6 +344,64 @@ def make_subagent(mode: str, prompt: str) -> str:
     # This function is a placeholder. The actual logic is handled specially in `cli.py`.
     return "Sub-agent execution is handled by the main application loop."
 
+def make_todo_list(items: list[str]) -> str:
+    """
+    Creates a todo list with the given items.
+    Returns a string representation of the todo list.
+    """
+    if not items:
+        return "Error: Todo list cannot be empty."
+    
+    todo_list = {"items": items, "completed": []}
+    import json
+    return json.dumps(todo_list)
+
+def check_todo_list(todo_list_json: str) -> str:
+    """
+    Checks the status of a todo list.
+    Returns information about completed and pending items.
+    """
+    try:
+        import json
+        todo_list = json.loads(todo_list_json)
+        items = todo_list.get("items", [])
+        completed = todo_list.get("completed", [])
+        
+        pending = [item for item in items if item not in completed]
+        
+        result = {
+            "total": len(items),
+            "completed": len(completed),
+            "pending": len(pending),
+            "completed_items": completed,
+            "pending_items": pending
+        }
+        return json.dumps(result)
+    except Exception as e:
+        return f"Error parsing todo list: {e}"
+
+def mark_todo_item_complete(todo_list_json: str, item: str) -> str:
+    """
+    Marks an item in the todo list as complete.
+    Returns the updated todo list.
+    """
+    try:
+        import json
+        todo_list = json.loads(todo_list_json)
+        items = todo_list.get("items", [])
+        completed = todo_list.get("completed", [])
+        
+        if item not in items:
+            return f"Error: Item '{item}' not found in todo list."
+        
+        if item not in completed:
+            completed.append(item)
+            todo_list["completed"] = completed
+        
+        return json.dumps(todo_list)
+    except Exception as e:
+        return f"Error updating todo list: {e}"
+
 # --- Tool Definitions for the LLM ---
 
 AVAILABLE_TOOLS = {
@@ -359,6 +417,9 @@ AVAILABLE_TOOLS = {
     "Git": git,
     "ListSymbols": list_symbols,
     "MakeSubagent": make_subagent,
+    "MakeTodoList": make_todo_list,
+    "CheckTodoList": check_todo_list,
+    "MarkTodoItemComplete": mark_todo_item_complete,
     "ReadFile": read_file,
     "ReadFolder": read_folder,
     "ReadManyFiles": read_many_files,
@@ -391,6 +452,9 @@ TOOLS_METADATA = [
     {"type": "function", "function": {"name": "Git", "description": "Executes a git command. Allowed subcommands: rm, add, commit, diff, log. Make regular commits. Use diffs to analyze changes.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "The git command arguments (e.g., 'commit -m \\'Initial commit\\'' or 'diff')."}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "EndTask", "description": "Signals the end of the sub-agent's task with a reason and optional info. This MUST be the final tool call made by a sub-agent.", "parameters": {"type": "object", "properties": {"reason": {"type": "string", "description": "The reason for ending the task (e.g., 'success', 'failure', 'partial_success')."}, "info": {"type": "string", "description": "Optional detailed information about what was accomplished or what failed."}}, "required": ["reason"]}}},
     {"type": "function", "function": {"name": "MakeSubagent", "description": "Creates and runs a sub-agent to perform a specific task. The sub-agent runs non-interactively and returns a JSON string with 'reason' and 'info' fields detailing the outcome. Use this to delegate complex work. Forbidden modes: 'ask', 'agent-maker'.", "parameters": {"type": "object", "properties": {"mode": {"type": "string", "enum": ["code", "architect"], "description": "The mode for the sub-agent to run in."}, "prompt": {"type": "string", "description": "The specific and detailed prompt for the sub-agent's task."}}, "required": ["mode", "prompt"]}}},
+    {"type": "function", "function": {"name": "MakeTodoList", "description": "Creates a todo list with the specified items. Returns a JSON representation of the todo list that can be used with other todo tools.", "parameters": {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "string"}, "description": "List of todo items."}}, "required": ["items"]}}},
+    {"type": "function", "function": {"name": "CheckTodoList", "description": "Checks the status of a todo list. Returns information about completed and pending items.", "parameters": {"type": "object", "properties": {"todo_list_json": {"type": "string", "description": "JSON representation of the todo list."}}, "required": ["todo_list_json"]}}},
+    {"type": "function", "function": {"name": "MarkTodoItemComplete", "description": "Marks an item in the todo list as complete.", "parameters": {"type": "object", "properties": {"todo_list_json": {"type": "string", "description": "JSON representation of the todo list."}, "item": {"type": "string", "description": "The item to mark as complete."}}, "required": ["todo_list_json", "item"]}}},
     {"type": "function", "function": {"name": "Shell", "description": "Executes a shell command and returns the output. Use with caution.", "parameters": {"type": "object", "properties": {"command": {"type": "string", "description": "The command to execute."}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "Think", "description": "Processes a thought by thinking about it deeply, considering related info, code, etc. This helps in breaking down complex problems and forming a plan.", "parameters": {"type": "object", "properties": {"thought": {"type": "string", "description": "The thought to think about deeply. Think about related info, code, etc."}}, "required": ["thought"]}}},
     {"type": "function", "function": {"name": "UserInput", "description": "Asks the user a question to get feedback, clarification, or the next task. Use this when you are unsure how to proceed or want to confirm a plan.", "parameters": {"type": "object", "properties": {"question": {"type": "string", "description": "The question to ask the user."}}, "required": ["question"]}}},

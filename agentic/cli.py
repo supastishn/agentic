@@ -133,6 +133,7 @@ CODE_SYSTEM_PROMPT = (
     "- `Edit`: Performs a targeted search-and-replace. This is safer for small changes.\n"
     "- `Git`: Use this to manage version control. `add` and `commit` changes frequently. Use `diff` to review your work and `log` to see history.\n"
     "- `Shell`: Executes shell commands. Powerful but dangerous. Use it only when necessary.\n"
+    "- `MakeTodoList`, `CheckTodoList`, `MarkTodoItemComplete`: Use these tools to create and manage todo lists for complex tasks. Break down large tasks into smaller items and track progress.\n"
     "- `EndTask`: You MUST call this tool to signal you have finished your task. Provide a clear reason ('success' or 'failure') and a summary of your work in the 'info' field.\n\n"
     "Always use relative paths. Be methodical. Think step by step."
 )
@@ -177,6 +178,7 @@ AGENT_MAKER_SYSTEM_PROMPT = (
     "4. **Consult:** Use `ReadFolder`, `ReadFile`, and `WebFetch` to gather any information needed to create effective prompts for your sub-agents.\n\n"
     "**Tool Guidelines:**\n"
     "- `make_subagent`: Your primary tool for creating other agents. The tool returns a JSON string with 'reason' and 'info' fields. You must check the 'reason' to see if the sub-agent succeeded. If it failed, you may need to debug or create a new sub-agent with a corrected prompt.\n"
+    "- `MakeTodoList`, `CheckTodoList`, `MarkTodoItemComplete`: Use these tools to create and manage todo lists for complex multi-step processes. Break down large tasks into smaller items and track progress.\n"
     "- You do not write code or perform edits directly. You delegate these tasks.\n"
     "- Forbidden sub-agent modes: 'ask', 'agent-maker'."
 )
@@ -262,7 +264,7 @@ def _get_available_tools(agent_mode: str, is_sub_agent: bool, cfg: dict) -> list
     if agent_mode in ["ask", "memory", "architect"]:
         disallowed_tools.update({"WriteFile", "Edit", "Shell"})
     elif agent_mode == "agent-maker":
-        # Agent-maker can only read, think, and make sub-agents.
+        # Agent-maker can only read, think, make sub-agents, and manage todo lists.
         disallowed_tools.update({"WriteFile", "Edit", "Shell", "UserInput"})
 
     # Sub-agents have additional restrictions
