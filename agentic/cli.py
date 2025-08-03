@@ -335,7 +335,14 @@ def _clear_llm_project_memories():
 def _run_memory_update(cfg, lock, in_background):
     """Clears LLM-generated project memories and runs a sub-agent to regenerate them."""
     if not lock.acquire(blocking=False):
-        console.print("[bold yellow]Skipping memory update as another is already in progress.[/bold yellow]")
+        if in_background:
+            # Show temporary message in hotbar for 3 seconds
+            print("\033[s\033[2K\033[1;33mBackground memory update skipped (already in progress)\033[0m\033[u", end="", flush=True)
+            import time
+            time.sleep(3)
+            print("\033[s\033[2K\033[u", end="", flush=True)
+        else:
+            console.print("[bold yellow]Skipping memory update as another is already in progress.[/bold yellow]")
         return
 
     def update_task():
@@ -350,10 +357,13 @@ def _run_memory_update(cfg, lock, in_background):
         finally:
             lock.release()
             if in_background:
-                console.print("\n[bold green]Background memory update finished.[/bold green]")
+                # Show temporary message in hotbar for 3 seconds
+                print("\033[s\033[2K\033[1;32mBackground memory update finished\033[0m\033[u", end="", flush=True)
+                import time
+                time.sleep(3)
+                print("\033[s\033[2K\033[u", end="", flush=True)
 
     if in_background:
-        console.print("[bold cyan]Memory update started in background.[/bold cyan]")
         thread = threading.Thread(target=update_task)
         thread.start()
     else:
@@ -362,7 +372,14 @@ def _run_memory_update(cfg, lock, in_background):
 
 def _run_rag_update(rag_retriever, rag_settings, lock, in_background):
     if not lock.acquire(blocking=False):
-        console.print("[bold yellow]Skipping RAG update as another is already in progress.[/bold yellow]")
+        if in_background:
+            # Show temporary message in hotbar for 3 seconds
+            print("\033[s\033[2K\033[1;33mBackground RAG update skipped (already in progress)\033[0m\033[u", end="", flush=True)
+            import time
+            time.sleep(3)
+            print("\033[s\033[2K\033[u", end="", flush=True)
+        else:
+            console.print("[bold yellow]Skipping RAG update as another is already in progress.[/bold yellow]")
         return
 
     def update_task():
@@ -375,10 +392,13 @@ def _run_rag_update(rag_retriever, rag_settings, lock, in_background):
         finally:
             lock.release()
             if in_background:
-                console.print("\n[bold green]Background RAG update finished.[/bold green]")
+                # Show temporary message in hotbar for 3 seconds
+                print("\033[s\033[2K\033[1;32mBackground RAG update finished\033[0m\033[u", end="", flush=True)
+                import time
+                time.sleep(3)
+                print("\033[s\033[2K\033[u", end="", flush=True)
 
     if in_background:
-        console.print("[bold cyan]RAG update started in background.[/bold cyan]")
         thread = threading.Thread(target=update_task)
         thread.start()
     else:
@@ -1563,9 +1583,12 @@ def start_interactive_session(initial_prompt, cfg):
                     prompt_count_since_rag_update += 1
                     prompt_interval = rag_settings.get("auto_update_prompt_interval", 5)
                     if prompt_count_since_rag_update >= prompt_interval:
-                        update_triggered = True
-                        trigger_reason = "prompt interval"
-                        prompt_count_since_rag_update = 0
+                        # Only trigger update if there were edits
+                        if session_stats.get("edit_count", 0) > 0:
+                            update_triggered = True
+                            trigger_reason = "prompt interval with edits"
+                            prompt_count_since_rag_update = 0
+                            session_stats["edit_count"] = 0
                 
                 elif auto_update_strategy == "edits":
                     edit_count = session_stats.get("edit_count", 0)
@@ -1641,9 +1664,12 @@ def start_interactive_session(initial_prompt, cfg):
                 prompt_count_since_memory_update += 1
                 prompt_interval = memory_settings.get("auto_update_prompt_interval", 5)
                 if prompt_count_since_memory_update >= prompt_interval:
-                    update_triggered = True
-                    trigger_reason = "prompt interval"
-                    prompt_count_since_memory_update = 0
+                    # Only trigger update if there were edits
+                    if session_stats.get("edit_count", 0) > 0:
+                        update_triggered = True
+                        trigger_reason = "prompt interval with edits"
+                        prompt_count_since_memory_update = 0
+                        session_stats["edit_count"] = 0
 
             elif auto_update_strategy == "edits":
                 edit_count = session_stats.get("edit_count", 0)
