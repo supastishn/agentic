@@ -897,6 +897,8 @@ def display_help():
 | `/memory save <text>`    | Saves user-generated text to the project's memory file.          |
 | `/memory update`         | Force re-generation of project memories (LLM-generated only).    |
 | `/memory delete`         | Deletes the current project's memory file.                       |
+| `/model [provider/model]`| Temporarily switch to a different model. Use `/model default` to reset. |
+| `/model`                 | Show the current model configuration.                            |
 | `/exit` or `exit`        | Exit the interactive session.                                    |
 | `! <command>`            | Execute a shell command directly from your terminal.             |
 
