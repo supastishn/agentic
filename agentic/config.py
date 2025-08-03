@@ -1228,8 +1228,9 @@ def _prompt_for_other_settings(config_to_edit: dict):
             "4. Tools Settings",
             "5. Safety & Cost Settings",
             "6. Miscellaneous Settings",
+            "7. MCP Server Settings",
             None,
-            "7. Back to Main Menu",
+            "8. Back to Main Menu",
         ]
 
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
@@ -1249,6 +1250,8 @@ def _prompt_for_other_settings(config_to_edit: dict):
             _prompt_for_safety_settings(config_to_edit)
         elif selected_index == 5:
             _prompt_for_misc_settings(config_to_edit)
+        elif selected_index == 6:
+            _prompt_for_mcp_settings(config_to_edit)
 
 
 def prompt_for_config() -> dict:
