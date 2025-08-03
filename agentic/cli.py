@@ -1920,7 +1920,7 @@ def main():
                 project_servers = json.load(open(paths['project']))['servers'] if paths['project'].exists() else {}
                 local_servers = json.load(open(paths['local']))['servers'] if paths['local'].exists() else {}
 
-                for name, config in sorted(servers.items()):
+                for name, server_details in sorted(servers.items()):
                     scope = "[dim]unknown[/dim]"
                     if name in local_servers:
                         scope = "[bold green]local[/bold green]"
@@ -1929,7 +1929,7 @@ def main():
                     elif name in user_servers:
                         scope = "[bold blue]user[/bold blue]"
                     
-                    console.print(f"- [cyan]{name}[/cyan] ({scope}): {config.get('url')}")
+                    console.print(f"- [cyan]{name}[/cyan] ({scope}): {server_details.get('url')}")
         
         elif mcp_args.mcp_command == "remove":
             result = mcp.remove_mcp_server(mcp_args.name, mcp_args.scope)
