@@ -1910,10 +1910,26 @@ def main():
         elif mcp_args.mcp_command == "list":
             servers = mcp.load_mcp_servers()
             if not servers:
-                console.print("[yellow]No MCP servers configured.[/yellow]")
+                console.print("[yellow]No MCP servers configured in any scope.[/yellow]")
             else:
+                console.print("[bold]MCP Servers (merged from all scopes):[/bold]")
+                
+                # To show scope, we load each file individually
+                paths = mcp._get_config_paths()
+                user_servers = json.load(open(paths['user']))['servers'] if paths['user'].exists() else {}
+                project_servers = json.load(open(paths['project']))['servers'] if paths['project'].exists() else {}
+                local_servers = json.load(open(paths['local']))['servers'] if paths['local'].exists() else {}
+
                 for name, config in sorted(servers.items()):
-                    console.print(f"[bold cyan]{name}[/bold cyan]: {config.get('url')}")
+                    scope = "[dim]unknown[/dim]"
+                    if name in local_servers:
+                        scope = "[bold green]local[/bold green]"
+                    elif name in project_servers:
+                        scope = "[bold yellow]project[/bold yellow]"
+                    elif name in user_servers:
+                        scope = "[bold blue]user[/bold blue]"
+                    
+                    console.print(f"- [cyan]{name}[/cyan] ({scope}): {config.get('url')}")
         
         elif mcp_args.mcp_command == "remove":
             result = mcp.remove_mcp_server(mcp_args.name, mcp_args.scope)

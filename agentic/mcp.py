@@ -39,6 +39,25 @@ def load_mcp_servers() -> dict:
                 pass
     return merged_servers
 
+def save_mcp_config_for_scope(servers_data: dict, scope: str) -> str:
+    """Saves a complete server dictionary to the specified scope's file."""
+    paths = _get_config_paths()
+    path = paths.get(scope)
+    if not path:
+        return f"Error: Invalid scope '{scope}'. Must be 'user', 'project', or 'local'."
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        # The data should be in the format {"servers": {...}}
+        full_config = {"servers": servers_data}
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(full_config, f, indent=2)
+        
+        return f"Successfully saved configuration to {scope} scope."
+    except Exception as e:
+        return f"Error saving configuration to {path}: {e}"
+
 def save_mcp_server(name: str, config: dict, scope: str) -> str:
     """Saves or updates a server configuration in the specified scope's file."""
     paths = _get_config_paths()
