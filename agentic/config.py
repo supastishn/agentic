@@ -1141,79 +1141,6 @@ def _prompt_for_misc_settings(config_to_edit: dict):
         elif selected_index == 2:
             break
 
-def _copy_claude_code_mcp_config():
-    """Finds and copies MCP server configs from Claude Code's desktop config."""
-    console = Console()
-    
-    # 1. Find Claude Code config file path based on OS
-    claude_config_path = None
-    if sys.platform == "darwin": # macOS
-        claude_config_path = Path.home() / ".claude" / "claude_desktop_config.json"
-    elif sys.platform == "win32":
-        appdata = os.getenv("APPDATA")
-        if appdata:
-            claude_config_path = Path(appdata) / "Claude" / "claude_desktop_config.json"
-    elif "linux" in sys.platform:
-        claude_config_path = Path.home() / ".claude" / "claude_desktop_config.json"
-
-    if not claude_config_path or not claude_config_path.exists():
-        console.print("\n[bold red]Error:[/] Could not find the Claude Code configuration file.")
-        console.input("Press Enter to continue...")
-        return
-
-    # 2. Read the Claude config file
-    try:
-        with claude_config_path.open("r", encoding="utf-8") as f:
-            claude_config = json.load(f)
-        claude_servers = claude_config.get("mcp_servers", {})
-        if not claude_servers:
-            console.print("\n[yellow]No MCP servers found in the Claude Code configuration.[/yellow]")
-            console.input("Press Enter to continue...")
-            return
-    except (json.JSONDecodeError, IOError) as e:
-        console.print(f"\n[bold red]Error reading Claude Code config file:[/] {e}")
-        console.input("Press Enter to continue...")
-        return
-
-    # 3. Load existing agentic user-scope config
-    agentic_user_servers = mcp.load_mcp_servers().get("user", {}) # Simplified, should ideally load just user scope
-    
-    # Correctly load just the user scope servers for comparison and update
-    user_config_path = mcp._get_config_paths()['user']
-    if user_config_path.exists():
-        try:
-            with user_config_path.open('r', encoding='utf-8') as f:
-                agentic_user_servers = json.load(f).get('servers', {})
-        except (json.JSONDecodeError, IOError):
-            agentic_user_servers = {} # Start fresh if file is corrupt
-    else:
-        agentic_user_servers = {}
-
-    # 4. Merge configs (non-destructive)
-    copied_servers = []
-    skipped_servers = []
-    
-    for name, config in claude_servers.items():
-        if name not in agentic_user_servers:
-            agentic_user_servers[name] = config
-            copied_servers.append(name)
-        else:
-            skipped_servers.append(name)
-
-    # 5. Save the updated agentic user-scope config
-    mcp.save_mcp_config_for_scope(agentic_user_servers, "user")
-
-    # 6. Report results
-    console.print("\n[bold green]✔ Import Complete[/bold green]")
-    if copied_servers:
-        console.print("Copied servers: " + ", ".join(f"[cyan]{s}[/]" for s in copied_servers))
-    if skipped_servers:
-        console.print("Skipped (already exist): " + ", ".join(f"[yellow]{s}[/]" for s in skipped_servers))
-    if not copied_servers and not skipped_servers:
-        console.print("No new servers to import.")
-    
-    console.input("\nPress Enter to continue...")
-
 def _prompt_for_mcp_settings(config_to_edit: dict):
     """Interactively prompts for MCP server configuration."""
     console = Console()
@@ -1246,7 +1173,8 @@ def _prompt_for_mcp_settings(config_to_edit: dict):
             break
         
         if selected_index == 0:
-            _copy_claude_code_mcp_config()
+            mcp.copy_claude_code_mcp_config()
+            # No need for console input here, it's handled in the function now.
             continue
 
 def _prompt_for_other_settings(config_to_edit: dict):

@@ -1846,45 +1846,38 @@ def main():
     """Main function for the agentic CLI tool."""
     # --- MCP Command Handling ---
     mcp_parser = argparse.ArgumentParser(
-        description="Manage MCP (Model Context Protocol) servers. Configurations are layered, with 'local' overriding 'project', and 'project' overriding 'user'.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description="Configure and manage MCP servers",
         add_help=False
     )
-    mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command")
+    mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command", title="commands")
 
     # `mcp add` command
-    parser_add = mcp_subparsers.add_parser(
-        "add",
-        help="Add or update an MCP server configuration in a specific scope.",
-        description=(
-            "Adds or updates an MCP server. The configuration is saved to a JSON file\n"
-            "corresponding to the chosen scope:\n"
-            "  - user: ~/.agentic-pypi/mcp.json (globally available)\n"
-            "  - project: ./.agentic.mcp.json (for this project, can be checked into git)\n"
-            "  - local: ~/.agentic-pypi/data/mcp/<project_name>.mcp.json (for this project, not in git)"
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser_add = mcp_subparsers.add_parser("add", help="Add a server")
     parser_add.add_argument("name", help="A unique name for the server.")
     parser_add.add_argument("url", help="The URL of the HTTP MCP server.")
-    parser_add.add_argument("--scope", choices=["user", "project", "local"], default="local", help="Where to save the configuration. 'user' is global, 'project' is for the repo, 'local' is for this machine only.")
+    parser_add.add_argument("--scope", choices=["user", "project", "local"], default="local", help="The scope to save the server configuration to.")
     parser_add.add_argument("--header", action="append", help="A header to send with requests (e.g., 'X-API-Key:my-secret-key'). Can be specified multiple times.")
-    
-    # `mcp list` command
-    mcp_subparsers.add_parser(
-        "list",
-        help="List all configured MCP servers from all scopes.",
-        description="Displays a merged list of all available MCP servers, showing which scope each server is loaded from. Scopes are layered: local > project > user."
-    )
 
     # `mcp remove` command
-    parser_remove = mcp_subparsers.add_parser(
-        "remove",
-        help="Remove an MCP server from a specific scope's configuration file.",
-        description="Removes a server configuration from a specific JSON file. You must specify the scope to identify which file to modify."
-    )
+    parser_remove = mcp_subparsers.add_parser("remove", help="Remove an MCP server")
     parser_remove.add_argument("name", help="The name of the server to remove.")
-    parser_remove.add_argument("--scope", choices=["user", "project", "local"], required=True, help="The specific scope from which to remove the server.")
+    parser_remove.add_argument("--scope", choices=["user", "project", "local"], required=True, help="The scope from which to remove the server.")
+
+    # `mcp list` command
+    mcp_subparsers.add_parser("list", help="List configured MCP servers")
+
+    # `mcp get` command
+    parser_get = mcp_subparsers.add_parser("get", help="Get details about an MCP server")
+    parser_get.add_argument("name", help="The name of the server to get.")
+
+    # `mcp add-json` command
+    parser_add_json = mcp_subparsers.add_parser("add-json", help="Add an MCP server with a JSON string")
+    parser_add_json.add_argument("name", help="A unique name for the server.")
+    parser_add_json.add_argument("json", help="The JSON configuration for the server.")
+    parser_add_json.add_argument("--scope", choices=["user", "project", "local"], default="local", help="The scope to save the server to.")
+
+    # `mcp add-from-claude-desktop` command
+    mcp_subparsers.add_parser("add-from-claude-desktop", help="Import MCP servers from Claude Desktop")
 
     # --- Main Parser ---
     parser = argparse.ArgumentParser(
@@ -1904,8 +1897,8 @@ def main():
     subparsers.add_parser("config", help="Open the configuration prompt.")
     
     # MCP command (as a subcommand of the main parser)
-    mcp_command_parser = subparsers.add_parser("mcp", help="Manage MCP (Model Context Protocol) servers. Use 'agentic mcp --help' for more details.")
-    mcp_command_parser.add_argument("mcp_command", choices=["add", "list", "remove"])
+    mcp_command_parser = subparsers.add_parser("mcp", help="Configure and manage MCP servers")
+    mcp_command_parser.add_argument("mcp_command", choices=["add", "remove", "list", "get", "add-json", "add-from-claude-desktop"])
     mcp_command_parser.add_argument("mcp_args", nargs=argparse.REMAINDER)
 
 
@@ -1939,9 +1932,18 @@ def main():
                 
                 # To show scope, we load each file individually
                 paths = mcp._get_config_paths()
-                user_servers = json.load(open(paths['user']))['servers'] if paths['user'].exists() else {}
-                project_servers = json.load(open(paths['project']))['servers'] if paths['project'].exists() else {}
-                local_servers = json.load(open(paths['local']))['servers'] if paths['local'].exists() else {}
+                user_servers = {}
+                project_servers = {}
+                local_servers = {}
+                try:
+                    if paths['user'].exists() and paths['user'].stat().st_size > 0:
+                        user_servers = json.load(open(paths['user']))['servers']
+                    if paths['project'].exists() and paths['project'].stat().st_size > 0:
+                        project_servers = json.load(open(paths['project']))['servers']
+                    if paths['local'].exists() and paths['local'].stat().st_size > 0:
+                        local_servers = json.load(open(paths['local']))['servers']
+                except (json.JSONDecodeError, KeyError):
+                    pass # Ignore malformed config files for listing
 
                 for name, server_details in sorted(servers.items()):
                     scope = "[dim]unknown[/dim]"
@@ -1957,6 +1959,38 @@ def main():
         elif mcp_args.mcp_command == "remove":
             result = mcp.remove_mcp_server(mcp_args.name, mcp_args.scope)
             console.print(result)
+
+        elif mcp_args.mcp_command == "get":
+            name_to_get = mcp_args.name
+            servers = mcp.load_mcp_servers()
+            if name_to_get not in servers:
+                console.print(f"Error: Server '{name_to_get}' not found.")
+            else:
+                paths = mcp._get_config_paths()
+                scope = "[dim]unknown[/dim]"
+                try:
+                    if paths['local'].exists() and paths['local'].stat().st_size > 0 and name_to_get in json.load(open(paths['local'])).get('servers', {}):
+                        scope = "local"
+                    elif paths['project'].exists() and paths['project'].stat().st_size > 0 and name_to_get in json.load(open(paths['project'])).get('servers', {}):
+                        scope = "project"
+                    elif paths['user'].exists() and paths['user'].stat().st_size > 0 and name_to_get in json.load(open(paths['user'])).get('servers', {}):
+                        scope = "user"
+                except (json.JSONDecodeError, KeyError):
+                    pass
+                
+                console.print(f"[bold]Details for server '{name_to_get}' (from {scope} scope):[/bold]")
+                console.print(json.dumps(servers[name_to_get], indent=2))
+        
+        elif mcp_args.mcp_command == "add-json":
+            try:
+                config_dict = json.loads(mcp_args.json)
+                result = mcp.save_mcp_server(mcp_args.name, config_dict, mcp_args.scope)
+                console.print(result)
+            except json.JSONDecodeError:
+                console.print("Error: Invalid JSON string provided.")
+        
+        elif mcp_args.mcp_command == "add-from-claude-desktop":
+            mcp.copy_claude_code_mcp_config()
         
         sys.exit(0)
 
