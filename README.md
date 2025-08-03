@@ -27,7 +27,7 @@ Agentic is available on PyPI.
 
 1.  **Install the package:**
     ```bash
-    pip install agentic
+    pip install Agent-ic
     ```
 
 2.  **Install browser drivers for the `Browser` tool:**

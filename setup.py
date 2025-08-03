@@ -4,7 +4,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
-    name="agentic",
+    name="Agent-ic",
     version="1.0.0",
     description="Open source, cheap, and premier coding agent",
     long_description=long_description,
