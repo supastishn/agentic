@@ -711,6 +711,12 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                         # Inject session-specific state if needed by the tool
                         if tool_name in ["ReadFile", "ReadManyFiles"]:
                             tool_args["read_files_in_session"] = read_files_in_session
+                            tool_args["messages"] = messages
+                        elif tool_name == "ReadSymbol":
+                            # Initialize symbol tracking if not already present
+                            if not hasattr(read_files_in_session, 'symbols'):
+                                read_files_in_session.symbols = {}
+                            tool_args["read_symbols_in_session"] = read_files_in_session.symbols
                         with console.status("[bold yellow]Executing tool..."):
                             tool_output = tool_func(**tool_args)
                     else:
@@ -730,6 +736,12 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                                 session_stats["edit_count"] = session_stats.get("edit_count", 0) + 1
                             if tool_name in ["ReadFile", "ReadManyFiles"]:
                                 tool_args["read_files_in_session"] = read_files_in_session
+                                tool_args["messages"] = messages
+                            elif tool_name == "ReadSymbol":
+                                # Initialize symbol tracking if not already present
+                                if not hasattr(read_files_in_session, 'symbols'):
+                                    read_files_in_session.symbols = {}
+                                tool_args["read_symbols_in_session"] = read_files_in_session.symbols
                             with console.status("[bold yellow]Executing tool..."):
                                 tool_output = tool_func(**tool_args)
                         else:
@@ -741,6 +753,12 @@ def process_llm_turn(messages, read_files_in_session, cfg, agent_mode: str, sess
                             session_stats["edit_count"] = session_stats.get("edit_count", 0) + 1
                         if tool_name in ["ReadFile", "ReadManyFiles"]:
                             tool_args["read_files_in_session"] = read_files_in_session
+                            tool_args["messages"] = messages
+                        elif tool_name == "ReadSymbol":
+                            # Initialize symbol tracking if not already present
+                            if not hasattr(read_files_in_session, 'symbols'):
+                                read_files_in_session.symbols = {}
+                            tool_args["read_symbols_in_session"] = read_files_in_session.symbols
                         with console.status("[bold yellow]Executing tool..."):
                             tool_output = tool_func(**tool_args)
                     else:

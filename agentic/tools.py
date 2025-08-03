@@ -75,13 +75,24 @@ def browser_type_text(selector: str, text: str) -> str:
     """Types text into an input field specified by a CSS selector."""
     return browser.browser_manager.type_text(selector, text)
 
-def read_file(path: str, read_files_in_session: set) -> str:
+def read_file(path: str, read_files_in_session: set, messages: list = None) -> str:
     """Reads the content of a single file."""
     p = Path(path)
     if not p.is_file():
         return f"Error: File not found at {path}"
 
     if path in read_files_in_session:
+        # Remove previous instances of this file from context and replace with redaction message
+        if messages:
+            file_identifier = f"File: {path}"
+            redaction_message = f"REDACTED TO SAVE TOKENS. PLEASE USE LATEST READ OF THE FILE: {path}"
+            
+            # Iterate through messages to find and redact previous file reads
+            for msg in messages:
+                if msg["role"] == "user" and file_identifier in msg["content"]:
+                    # Replace the content with redaction message
+                    msg["content"] = redaction_message
+        
         return f"File '{path}' has already been read in this session. Its contents are in the context."
 
     try:
@@ -91,11 +102,11 @@ def read_file(path: str, read_files_in_session: set) -> str:
     except Exception as e:
         return f"Error reading file {path}: {e}"
 
-def read_many_files(paths: list[str], read_files_in_session: set) -> str:
+def read_many_files(paths: list[str], read_files_in_session: set, messages: list = None) -> str:
     """Reads and returns the content of multiple files."""
     results = []
     for path in paths:
-        content = read_file(path, read_files_in_session)
+        content = read_file(path, read_files_in_session, messages)
         results.append({"path": path, "content": content})
     return json.dumps(results)
 
@@ -146,13 +157,19 @@ def list_symbols(path: str) -> str:
     except Exception as e:
         return f"Error parsing symbols in {path}: {e}"
 
-def read_symbol(path: str, symbol_name: str) -> str:
+def read_symbol(path: str, symbol_name: str, read_symbols_in_session: dict = None) -> str:
     """Reads the source code of a specific function or class from a Python file."""
     p = Path(path)
     if not p.is_file():
         return f"Error: File not found at {path}"
     if not path.endswith('.py'):
         return "Error: ReadSymbol currently only supports Python (.py) files."
+
+    # Create identifier for this symbol
+    symbol_identifier = f"{path}:{symbol_name}"
+    
+    if read_symbols_in_session is not None and symbol_identifier in read_symbols_in_session:
+        return f"Symbol '{symbol_name}' from '{path}' has already been read in this session. Its contents are in the context."
 
     try:
         source_code = p.read_text()
@@ -168,7 +185,13 @@ def read_symbol(path: str, symbol_name: str) -> str:
         if not target_node:
             return f"Error: Symbol '{symbol_name}' not found in {path}."
 
-        return ast.get_source_segment(source_code, target_node)
+        result = ast.get_source_segment(source_code, target_node)
+        
+        # Track this symbol read if tracking is enabled
+        if read_symbols_in_session is not None:
+            read_symbols_in_session[symbol_identifier] = True
+            
+        return result
     except Exception as e:
         return f"Error reading symbol '{symbol_name}' from {path}: {e}"
 
