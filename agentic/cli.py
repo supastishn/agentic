@@ -1871,12 +1871,6 @@ def main():
     mcp_parser.usage = "agentic mcp [options] [command]"
     mcp_subparsers = mcp_parser.add_subparsers(dest="mcp_command", title="Commands")
 
-    # `mcp serve` command
-    mcp_subparsers.add_parser(
-        "serve",
-        help="Start the Claude Code MCP server"
-    )
-
     # `mcp add` command
     parser_add = mcp_subparsers.add_parser(
         "add",
@@ -1919,11 +1913,6 @@ def main():
     mcp_subparsers.add_parser(
         "add-from-claude-desktop",
         help="Import MCP servers from Claude Desktop (Mac and WSL only)"
-    )
-
-    mcp_subparsers.add_parser(
-        "reset-project-choices",
-        help="Reset all approved and rejected project-scoped (.mcp.json) servers within this project"
     )
 
     mcp_subparsers.add_parser("help", help="display help for command")
@@ -2021,12 +2010,6 @@ def main():
         
         elif args.mcp_command == "add-from-claude-desktop":
             mcp.copy_claude_code_mcp_config()
-
-        elif args.mcp_command == "serve":
-            console.print("The 'serve' command is not yet implemented.")
-
-        elif args.mcp_command == "reset-project-choices":
-            console.print("The 'reset-project-choices' command is not yet implemented.")
         
         sys.exit(0)
 
