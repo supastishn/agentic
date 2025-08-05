@@ -1199,7 +1199,7 @@ def _prompt_for_other_settings(config_to_edit: dict):
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 7:
+        if selected_index is None or selected_index == 8:
             break
         elif selected_index == 0:
             _prompt_for_custom_instructions(config_to_edit)
