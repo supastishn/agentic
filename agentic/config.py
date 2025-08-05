@@ -824,7 +824,7 @@ def _prompt_for_rag_settings(config_to_edit: dict):
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 6:
+        if selected_index is None or selected_index == 5:
             config_to_edit["rag_settings"] = original_settings
             if not config_to_edit["rag_settings"]:
                 config_to_edit.pop("rag_settings", None)
@@ -849,7 +849,7 @@ def _prompt_for_rag_settings(config_to_edit: dict):
         elif selected_index == 3:
             settings["run_in_background"] = not run_in_background
             continue
-        elif selected_index == 5:
+        elif selected_index == 4:
             break
 
 def _prompt_for_memory_auto_update(settings: dict):
@@ -961,7 +961,7 @@ def _prompt_for_memory_settings(config_to_edit: dict):
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 5:
+        if selected_index is None or selected_index == 4:
             config_to_edit["memory_settings"] = original_settings
             if not config_to_edit["memory_settings"]:
                 config_to_edit.pop("memory_settings", None)
@@ -975,7 +975,7 @@ def _prompt_for_memory_settings(config_to_edit: dict):
         elif selected_index == 2:
             settings["run_in_background"] = not run_in_background
             continue
-        elif selected_index == 4:
+        elif selected_index == 3:
             break
 
 def _prompt_for_tools_settings(config_to_edit: dict):
@@ -1007,7 +1007,7 @@ def _prompt_for_tools_settings(config_to_edit: dict):
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 4:
+        if selected_index is None or selected_index == 3:
             config_to_edit["tools_settings"] = original_settings
             if not config_to_edit["tools_settings"]:
                 config_to_edit.pop("tools_settings", None)
@@ -1018,7 +1018,7 @@ def _prompt_for_tools_settings(config_to_edit: dict):
         elif selected_index == 1:
             settings["enable_think"] = not enable_think
             continue
-        elif selected_index == 3:
+        elif selected_index == 2:
             break
 
 def _prompt_for_custom_instructions(config_to_edit: dict):
@@ -1086,7 +1086,7 @@ def _prompt_for_safety_settings(config_to_edit: dict):
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 3:
+        if selected_index is None or selected_index == 2:
             config_to_edit["safety_settings"] = original_settings
             if not config_to_edit["safety_settings"]:
                 config_to_edit.pop("safety_settings", None)
@@ -1101,7 +1101,7 @@ def _prompt_for_safety_settings(config_to_edit: dict):
                 console.print("\n[bold red]Invalid input. Please enter a non-negative number.[/bold red]")
                 console.input("Press Enter to continue...")
             continue
-        elif selected_index == 2:
+        elif selected_index == 1:
             break
 
 def _prompt_for_misc_settings(config_to_edit: dict):
@@ -1130,7 +1130,7 @@ def _prompt_for_misc_settings(config_to_edit: dict):
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 3:
+        if selected_index is None or selected_index == 2:
             config_to_edit["misc_settings"] = original_settings
             if not config_to_edit["misc_settings"]:
                 config_to_edit.pop("misc_settings", None)
@@ -1138,7 +1138,7 @@ def _prompt_for_misc_settings(config_to_edit: dict):
         elif selected_index == 0:
             settings["show_reasoning"] = not show_reasoning
             continue
-        elif selected_index == 2:
+        elif selected_index == 1:
             break
 
 def _prompt_for_mcp_settings(config_to_edit: dict):
@@ -1169,7 +1169,7 @@ def _prompt_for_mcp_settings(config_to_edit: dict):
         terminal_menu = TerminalMenu(menu_items, title="Select an option", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 2:
+        if selected_index is None or selected_index == 1:
             break
         
         if selected_index == 0:
