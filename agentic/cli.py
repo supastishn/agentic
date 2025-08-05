@@ -62,10 +62,14 @@ original_openai_api_base = os.environ.get("OPENAI_API_BASE")
 
 def _update_environment_for_mode(agent_mode: str, cfg: dict):
     """Sets or unsets OPENAI_API_BASE based on the active mode's provider."""
-    modes = cfg.get("modes", {})
-    global_config = modes.get("global", {})
-    mode_config = modes.get(agent_mode, {})
-    active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
+    active_provider = None
+    if cfg.get("temp_model"):
+        active_provider = cfg["temp_model"].get("provider")
+    else:
+        modes = cfg.get("modes", {})
+        global_config = modes.get("global", {})
+        mode_config = modes.get(agent_mode, {})
+        active_provider = mode_config.get("active_provider") or global_config.get("active_provider")
 
     if active_provider == "hackclub_ai":
         os.environ["OPENAI_API_BASE"] = "https://ai.hackclub.com"
