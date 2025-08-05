@@ -1380,7 +1380,7 @@ def start_interactive_session(initial_prompt, cfg):
                     messages.pop()
 
                 continue
-            elif user_input.lower().startswith("/rag"):
+            elif user_input.lower().split()[0] == "/rag":
                 parts = user_input.lower().split()
                 command = parts[1] if len(parts) > 1 else None
                 batch_size = cfg.get("rag_settings", {}).get("rag_batch_size", 100)
@@ -1428,7 +1428,7 @@ def start_interactive_session(initial_prompt, cfg):
                 else:
                     console.print("[bold red]Error:[/] Invalid RAG command. Use `/rag init`, `/rag update`, or `/rag deinit`.")
                     continue
-            elif user_input.lower().startswith("/load_preset"):
+            elif user_input.lower().split()[0] == "/load_preset":
                 parts = user_input.strip().split(maxsplit=1)
                 if len(parts) < 2:
                     presets = cfg.get("presets", {})
@@ -1461,7 +1461,7 @@ def start_interactive_session(initial_prompt, cfg):
                 
                 console.print(f"[bold green]✔ Preset '{preset_name}' loaded. Agent capabilities updated.[/bold green]")
                 continue
-            elif user_input.lower().startswith("/memory"):
+            elif user_input.lower().split()[0] == "/memory":
                 parts = user_input.strip().split(maxsplit=2)
                 command = parts[1] if len(parts) > 1 else None
 
@@ -1523,7 +1523,7 @@ def start_interactive_session(initial_prompt, cfg):
                 if yolo_mode:
                     console.print("[yellow]Warning: Dangerous commands will execute without confirmation.[/yellow]")
                 continue
-            elif user_input.lower().startswith("/mode"):
+            elif user_input.lower().split()[0] == "/mode":
                 parts = user_input.strip().lower().split()
                 if len(parts) == 2 and parts[1] in MODES:
                     agent_mode = parts[1]
@@ -1537,7 +1537,7 @@ def start_interactive_session(initial_prompt, cfg):
                 continue
             elif user_input.lower() in ["/exit", "exit"]:
                 break
-            elif user_input.lower().startswith("/scaffold"):
+            elif user_input.lower().split()[0] == "/scaffold":
                 parts = user_input.strip().split(maxsplit=1)
                 if len(parts) < 2 or not parts[1]:
                     console.print("[bold red]Usage: /scaffold <a description of the project to build>[/]")
@@ -1598,7 +1598,7 @@ def start_interactive_session(initial_prompt, cfg):
                 # Reload system prompt in case settings affecting it (like tools) changed
                 messages[0] = {"role": "system", "content": get_system_prompt(agent_mode, cfg)}
                 continue
-            elif user_input.lower().startswith("/model"):
+            elif user_input.lower().split()[0] == "/model":
                 parts = user_input.strip().split()
                 if len(parts) == 1:
                     # Show current model
