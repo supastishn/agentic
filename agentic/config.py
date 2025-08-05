@@ -743,7 +743,7 @@ def _prompt_for_rag_auto_update(settings: dict):
         terminal_menu = TerminalMenu(menu_items, title="Select a strategy", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 6: # Discard
+        if selected_index is None or selected_index == 5: # Discard
             settings.clear()
             settings.update(original_settings)
             break
@@ -778,7 +778,7 @@ def _prompt_for_rag_auto_update(settings: dict):
             settings["auto_update_strategy"] = "model"
             settings.pop("auto_update_prompt_interval", None)
             settings.pop("auto_update_edit_interval", None)
-        elif selected_index == 5: # Save
+        elif selected_index == 4: # Save
             break
 
 def _prompt_for_rag_settings(config_to_edit: dict):
@@ -884,7 +884,7 @@ def _prompt_for_memory_auto_update(settings: dict):
         terminal_menu = TerminalMenu(menu_items, title="Select a strategy", menu_cursor_style=("fg_green", "bold"), menu_highlight_style=("bg_green", "fg_black"))
         selected_index = terminal_menu.show()
 
-        if selected_index is None or selected_index == 6: # Discard
+        if selected_index is None or selected_index == 5: # Discard
             settings.clear()
             settings.update(original_settings)
             break
@@ -919,7 +919,7 @@ def _prompt_for_memory_auto_update(settings: dict):
             settings["auto_update_strategy"] = "model"
             settings.pop("auto_update_prompt_interval", None)
             settings.pop("auto_update_edit_interval", None)
-        elif selected_index == 5: # Save
+        elif selected_index == 4: # Save
             break
 
 def _prompt_for_memory_settings(config_to_edit: dict):
